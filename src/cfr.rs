@@ -193,7 +193,8 @@ fn regret_matching(cum_cfr: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
 }
 
 /// Performs training.
-pub fn train(root: &impl GameNode, num_iter: usize) {
+/// Returns: obtained strategy
+pub fn train(root: &impl GameNode, num_iter: usize) -> HashMap<PublicInfoSet, Vec<Vec<f64>>> {
     let mut cum_cfr = HashMap::new();
     let mut cum_sgm = HashMap::new();
     let pi = vec![1.0; root.private_info_set_size()];
@@ -203,20 +204,20 @@ pub fn train(root: &impl GameNode, num_iter: usize) {
         }
     }
 
-    // display information of KuhnNode
-    let sorted_sigma = cum_sgm
-        .into_iter()
-        .collect::<std::collections::BTreeMap<_, _>>();
-    for (key, value) in sorted_sigma {
-        println!("[{}]", key);
-        for i in 0..3 {
-            let sum = value[0][i] + value[1][i];
-            println!(
-                "{}: {:.2}%, {:.2}%",
-                ["J", "Q", "K"][i],
-                100.0 * value[0][i] / sum,
-                100.0 * value[1][i] / sum
-            );
+    let mut average_strategy = HashMap::new();
+    for (key, value) in &cum_sgm {
+        let mut result = Vec::new();
+        let mut denom = vec![0.0; value[0].len()];
+        for cum_sgm_action in value {
+            add_vector(&mut denom, cum_sgm_action);
         }
+        for cum_sgm_action in value {
+            let mut tmp = cum_sgm_action.clone();
+            div_vector(&mut tmp, &denom, 0.0);
+            result.push(tmp);
+        }
+        average_strategy.insert(key.clone(), result);
     }
+
+    average_strategy
 }
