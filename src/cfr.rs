@@ -1,13 +1,10 @@
 use std::collections::HashMap;
 
-pub type PublicInfoSet = String;
+pub type PublicInfoSet = Vec<usize>;
 
 pub trait GameNode {
     /// Returns whether the current node is a terminal node.
     fn is_terminal_node(&self) -> bool;
-
-    /// Returns wheter the current node is a community card node.
-    fn is_community_card_node(&self) -> bool;
 
     /// Returns the current player's index.
     fn current_player(&self) -> usize;
@@ -18,17 +15,14 @@ pub trait GameNode {
     /// Returns a set of valid actions.
     fn actions(&self) -> std::ops::Range<usize>;
 
-    /// Returns a set of valid actions and associated probabilities.
-    fn community_card_actions(&self) -> std::iter::Enumerate<std::slice::Iter<'_, f64>>;
-
     /// Plays `action` and returns a node after `action` played.
     fn play(&self, action: usize) -> Self;
 
     /// Returns the public information set.
-    fn public_info_set(&self) -> PublicInfoSet;
+    fn public_info_set(&self) -> &PublicInfoSet;
 
-    /// Returns the size of private information set.
-    fn private_info_set_size(&self) -> usize;
+    /// Returns the length of private information set.
+    fn private_info_set_len(&self) -> usize;
 
     /// Evaluates player's payoffs according to `pmi`.
     fn evaluate(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64>;
@@ -103,30 +97,20 @@ fn cfr_rec(
     }
 
     // initialize counterfactual value
-    let mut cfvalue = vec![0.0; node.private_info_set_size()];
-
-    // community card node
-    if node.is_community_card_node() {
-        for (action, prob) in node.community_card_actions() {
-            let mut tmp = cfr_rec(&node.play(action), iter, player, pi, pmi, cum_cfr, cum_sgm);
-            mul_scalar(&mut tmp, *prob);
-            add_vector(&mut cfvalue, &tmp);
-        }
-        return cfvalue;
-    }
+    let mut cfvalue = vec![0.0; node.private_info_set_len()];
 
     // get encoded information set string
     let public_info_set = node.public_info_set();
 
     // create default entries when newly visited
-    if !cum_cfr.contains_key(&public_info_set) {
-        let default = vec![vec![0.0; node.private_info_set_size()]; node.num_actions()];
+    if !cum_cfr.contains_key(public_info_set) {
+        let default = vec![vec![0.0; node.private_info_set_len()]; node.num_actions()];
         cum_cfr.insert(public_info_set.clone(), default.clone());
         cum_sgm.insert(public_info_set.clone(), default.clone());
     }
 
     // compute current sigma
-    let sigma = regret_matching(&cum_cfr[&public_info_set]);
+    let sigma = regret_matching(&cum_cfr[public_info_set]);
 
     if node.current_player() == player {
         let mut cfvalue_action = Vec::new();
@@ -142,8 +126,8 @@ fn cfr_rec(
 
         // update cumulative regrets and sigmas
         for action in node.actions() {
-            let r = &mut cum_cfr.get_mut(&public_info_set).unwrap()[action];
-            let s = &mut cum_sgm.get_mut(&public_info_set).unwrap()[action];
+            let r = &mut cum_cfr.get_mut(public_info_set).unwrap()[action];
+            let s = &mut cum_sgm.get_mut(public_info_set).unwrap()[action];
             let mut pi = pi.clone();
             add_vector(r, &cfvalue_action[action]);
             sub_vector(r, &cfvalue);
@@ -171,13 +155,10 @@ fn cfr_rec(
 
 /// Performs regret matching.
 fn regret_matching(cum_cfr: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
-    let mut ret = Vec::new();
     let num_actions = cum_cfr.len();
-    if num_actions == 0 {
-        return ret;
-    }
-    let private_info_set_size = cum_cfr[0].len();
-    let mut denom = vec![0.0; private_info_set_size];
+    let private_info_set_len = cum_cfr[0].len();
+    let mut result = Vec::new();
+    let mut denom = vec![0.0; private_info_set_len];
     for cum_cfr_action in cum_cfr {
         let mut tmp = cum_cfr_action.clone();
         nonneg_vector(&mut tmp);
@@ -187,9 +168,9 @@ fn regret_matching(cum_cfr: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
         let mut tmp = cum_cfr_action.clone();
         nonneg_vector(&mut tmp);
         div_vector(&mut tmp, &denom, 1.0 / num_actions as f64);
-        ret.push(tmp);
+        result.push(tmp);
     }
-    ret
+    result
 }
 
 /// Performs training.
@@ -197,7 +178,7 @@ fn regret_matching(cum_cfr: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
 pub fn train(root: &impl GameNode, num_iter: usize) -> HashMap<PublicInfoSet, Vec<Vec<f64>>> {
     let mut cum_cfr = HashMap::new();
     let mut cum_sgm = HashMap::new();
-    let pi = vec![1.0; root.private_info_set_size()];
+    let pi = vec![1.0; root.private_info_set_len()];
     for iter in 0..num_iter {
         for player in 0..2 {
             cfr_rec(root, iter, player, &pi, &pi, &mut cum_cfr, &mut cum_sgm);

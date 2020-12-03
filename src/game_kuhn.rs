@@ -2,25 +2,18 @@ use crate::cfr::*;
 
 #[derive(Clone, Debug)]
 pub struct KuhnNode {
-    public_info_set: Vec<PublicInfoSet>,
+    public_info_set: PublicInfoSet,
 }
 
 impl GameNode for KuhnNode {
     #[inline]
     fn is_terminal_node(&self) -> bool {
-        match self.public_info_set.last() {
-            Some(action) if action == "Bet" => false,
-            Some(action) if action == "Call" => true,
-            Some(action) if action == "Check" => self.public_info_set.len() == 2,
-            Some(action) if action == "Fold" => true,
-            None => false,
-            _ => unreachable!(),
+        match self.public_info_set.as_slice() {
+            [0, 1] => false,
+            [_, _] => true,
+            [_, _, _] => true,
+            _ => false,
         }
-    }
-
-    #[inline]
-    fn is_community_card_node(&self) -> bool {
-        false
     }
 
     #[inline]
@@ -39,42 +32,32 @@ impl GameNode for KuhnNode {
     }
 
     #[inline]
-    fn community_card_actions(&self) -> std::iter::Enumerate<std::slice::Iter<'_, f64>> {
-        unreachable!()
-    }
-
-    #[inline]
     fn play(&self, action: usize) -> Self {
         let mut ret = self.clone();
-        ret.public_info_set.push(match self.public_info_set.last() {
-            Some(prev_action) if prev_action == "Bet" => ["Call", "Fold"][action].into(),
-            Some(prev_action) if prev_action == "Check" => ["Bet", "Check"][action].into(),
-            None => ["Bet", "Check"][action].into(),
-            _ => unreachable!(),
-        });
+        ret.public_info_set.push(action);
         ret
     }
 
     #[inline]
-    fn public_info_set(&self) -> PublicInfoSet {
-        self.public_info_set.join("->")
+    fn public_info_set(&self) -> &PublicInfoSet {
+        &self.public_info_set
     }
 
     #[inline]
-    fn private_info_set_size(&self) -> usize {
+    fn private_info_set_len(&self) -> usize {
         3
     }
 
     #[inline]
     fn evaluate(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64> {
         let mut ret = Vec::new();
-        for i in 0..self.private_info_set_size() {
+        for i in 0..self.private_info_set_len() {
             let mut cfvalue = 0.0;
-            for j in 0..self.private_info_set_size() {
+            for j in 0..self.private_info_set_len() {
                 if i == j {
                     continue;
                 }
-                cfvalue += self.payoff(player, i, j) * pmi[j] / 6.0;
+                cfvalue += self.payoff(player, i, j) * pmi[j];
             }
             ret.push(cfvalue);
         }
@@ -91,30 +74,40 @@ impl KuhnNode {
     }
 
     #[inline]
-    fn payoff(&self, player: usize, my_card: usize, opp_card: usize) -> f64 {
-        match self.public_info_set.last() {
-            Some(action) if action == "Call" => {
-                if my_card > opp_card {
-                    2.0
-                } else {
-                    -2.0
-                }
-            }
-            Some(action) if action == "Check" => {
-                if my_card > opp_card {
-                    1.0
-                } else {
-                    -1.0
-                }
-            }
-            Some(action) if action == "Fold" => {
-                if self.current_player() == player {
-                    1.0
-                } else {
-                    -1.0
-                }
-            }
+    pub fn public_info_set_str(info_set: &PublicInfoSet) -> String {
+        match info_set.as_slice() {
+            [] => "(Empty)",
+            [0] => "Check",
+            [1] => "Bet",
+            [0, 1] => "Check => Bet",
             _ => unreachable!(),
+        }
+        .into()
+    }
+
+    #[inline]
+    fn payoff(&self, player: usize, my_card: usize, opp_card: usize) -> f64 {
+        if let [0, 0] = self.public_info_set.as_slice() {
+            // check => check
+            if my_card > opp_card {
+                1.0
+            } else {
+                -1.0
+            }
+        } else if self.public_info_set.last() == Some(&0) {
+            // last player folded
+            if self.current_player() == player {
+                1.0
+            } else {
+                -1.0
+            }
+        } else {
+            // last player called
+            if my_card > opp_card {
+                2.0
+            } else {
+                -2.0
+            }
         }
     }
 }
