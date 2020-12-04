@@ -49,7 +49,7 @@ impl GameNode for KuhnNode {
     }
 
     #[inline]
-    fn evaluate(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64> {
+    fn get_cfvalues(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64> {
         let mut ret = Vec::with_capacity(self.private_info_set_len());
         for i in 0..self.private_info_set_len() {
             let mut cfvalue = 0.0;
@@ -60,6 +60,20 @@ impl GameNode for KuhnNode {
                 cfvalue += self.payoff(player, i, j) * pmi[j];
             }
             ret.push(cfvalue);
+        }
+        ret
+    }
+
+    #[inline]
+    fn get_ev(&self, player: usize, pi: &Vec<f64>, pmi: &Vec<f64>) -> f64 {
+        let mut ret = 0.0;
+        for i in 0..self.private_info_set_len() {
+            for j in 0..self.private_info_set_len() {
+                if i == j {
+                    continue;
+                }
+                ret += self.payoff(player, i, j) * pi[i] * pmi[j] / 6.0;
+            }
         }
         ret
     }

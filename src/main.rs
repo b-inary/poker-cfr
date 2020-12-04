@@ -14,12 +14,15 @@ fn main() {
 
 fn kuhn() {
     let kuhn_node = KuhnNode::new();
-    let strategy = cfr::train(&kuhn_node, 100000)
+    let (strategy, ev) = cfr::train(&kuhn_node, 100000);
+    let strategy = strategy
         .into_iter()
         .map(|(key, value)| (KuhnNode::public_info_set_str(&key), value))
         .collect::<BTreeMap<_, _>>();
 
     println!("[Kuhn poker] (left: check/fold%, right: bet/call%)");
+    println!("- EV of first player: {:+.6}", ev);
+    println!("- EV of second player: {:+.6}", -ev);
     for (key, value) in strategy {
         println!("- {}", key);
         for i in 0..3 {
@@ -35,12 +38,14 @@ fn kuhn() {
 
 fn push_fold(eff_stack: f64) {
     let push_fold_node = PushFoldNode::new(eff_stack);
-    let strategy = cfr::train(&push_fold_node, 10000);
+    let (strategy, ev) = cfr::train(&push_fold_node, 10000);
     let pusher = &strategy[&vec![]];
     let caller = &strategy[&vec![1]];
 
     let mut push_rate = vec![vec![0.0; 13]; 13];
     let mut call_rate = vec![vec![0.0; 13]; 13];
+    let mut overall_push_rate = 0.0;
+    let mut overall_call_rate = 0.0;
 
     let mut k = 0;
     for i in 0..51 {
@@ -56,6 +61,8 @@ fn push_fold(eff_stack: f64) {
                 push_rate[max(rank1, rank2)][min(rank1, rank2)] += pusher[1][k];
                 call_rate[max(rank1, rank2)][min(rank1, rank2)] += caller[1][k];
             }
+            overall_push_rate += pusher[1][k];
+            overall_call_rate += caller[1][k];
             k += 1;
         }
     }
@@ -74,12 +81,17 @@ fn push_fold(eff_stack: f64) {
         }
     }
 
+    overall_push_rate /= 52.0 * 51.0 / 2.0;
+    overall_call_rate /= 52.0 * 51.0 / 2.0;
+
     println!();
     println!(
         "[Push/Fold heads-up hold'em] (effective stack = {}bb)",
         eff_stack
     );
     println!("Pusher (small blind):");
+    println!("- EV = {:+.6}bb", ev);
+    println!("- Overall push rate = {:.2}%", 100.0 * overall_push_rate);
     println!(" |   A     K     Q     J     T     9     8     7     6     5     4     3     2");
     println!("-+------------------------------------------------------------------------------");
     for i in 0..13 {
@@ -102,7 +114,9 @@ fn push_fold(eff_stack: f64) {
     }
 
     println!();
-    println!("Caller (big blind):");
+    println!("Caller (big blind): ");
+    println!("- EV = {:+.6}bb", -ev);
+    println!("- Overall call rate = {:.2}%", 100.0 * overall_call_rate);
     println!(" |   A     K     Q     J     T     9     8     7     6     5     4     3     2");
     println!("-+------------------------------------------------------------------------------");
     for i in 0..13 {

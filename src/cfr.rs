@@ -24,8 +24,11 @@ pub trait GameNode {
     /// Returns the length of private information set.
     fn private_info_set_len(&self) -> usize;
 
-    /// Evaluates player's payoffs according to `pmi`.
-    fn evaluate(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64>;
+    /// Computes player's counterfactual values according to `pmi`.
+    fn get_cfvalues(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64>;
+
+    /// Computes player-0's expected value.
+    fn get_ev(&self, player: usize, pi: &Vec<f64>, pmi: &Vec<f64>) -> f64;
 }
 
 /// Vector-scalar multiplication.
@@ -93,7 +96,7 @@ fn cfr_rec(
 ) -> Vec<f64> {
     // terminal node
     if node.is_terminal_node() {
-        return node.evaluate(player, pmi);
+        return node.get_cfvalues(player, pmi);
     }
 
     // initialize counterfactual value
@@ -176,16 +179,54 @@ fn regret_matching(cum_cfr: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     result
 }
 
+/// Computes  `player`'s EV.
+fn compute_ev(
+    node: &impl GameNode,
+    player: usize,
+    pi: &Vec<f64>,
+    pmi: &Vec<f64>,
+    sigma_i: &HashMap<Vec<usize>, Vec<Vec<f64>>>,
+    sigma_mi: &HashMap<Vec<usize>, Vec<Vec<f64>>>,
+) -> f64 {
+    if node.is_terminal_node() {
+        return node.get_ev(player, pi, pmi);
+    }
+
+    let mut ev = 0.0;
+    let public_info_set = node.public_info_set();
+
+    if node.current_player() == player {
+        let sigma = &sigma_i[public_info_set];
+        for action in node.actions() {
+            let mut pi = pi.clone();
+            mul_vector(&mut pi, &sigma[action]);
+            ev += compute_ev(&node.play(action), player, &pi, pmi, sigma_i, sigma_mi);
+        }
+    } else {
+        let sigma = &sigma_mi[public_info_set];
+        for action in node.actions() {
+            let mut pmi = pmi.clone();
+            mul_vector(&mut pmi, &sigma[action]);
+            ev += compute_ev(&node.play(action), player, pi, &pmi, sigma_i, sigma_mi);
+        }
+    }
+
+    ev
+}
+
 /// Performs training.
 /// Returns: obtained strategy
-pub fn train(root: &impl GameNode, num_iter: usize) -> HashMap<PublicInfoSet, Vec<Vec<f64>>> {
+pub fn train(
+    root: &impl GameNode,
+    num_iter: usize,
+) -> (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64) {
     let mut cum_cfr = HashMap::new();
     let mut cum_sgm = HashMap::new();
-    let pi = vec![1.0; root.private_info_set_len()];
+    let ones = vec![1.0; root.private_info_set_len()];
 
     for iter in 0..num_iter {
         for player in 0..2 {
-            cfr_rec(root, iter, player, &pi, &pi, &mut cum_cfr, &mut cum_sgm);
+            cfr_rec(root, iter, player, &ones, &ones, &mut cum_cfr, &mut cum_sgm);
         }
     }
 
@@ -210,5 +251,6 @@ pub fn train(root: &impl GameNode, num_iter: usize) -> HashMap<PublicInfoSet, Ve
         average_strategy.insert(key.clone(), result);
     }
 
-    average_strategy
+    let ev = compute_ev(root, 0, &ones, &ones, &average_strategy, &average_strategy);
+    (average_strategy, ev)
 }
