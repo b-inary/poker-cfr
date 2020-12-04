@@ -99,7 +99,7 @@ fn cfr_rec(
     // initialize counterfactual value
     let mut cfvalue = vec![0.0; node.private_info_set_len()];
 
-    // get encoded information set string
+    // get current public information set
     let public_info_set = node.public_info_set();
 
     // create default entries when newly visited
@@ -113,7 +113,7 @@ fn cfr_rec(
     let sigma = regret_matching(&cum_cfr[public_info_set]);
 
     if node.current_player() == player {
-        let mut cfvalue_action = Vec::new();
+        let mut cfvalue_action = Vec::with_capacity(node.num_actions());
 
         for action in node.actions() {
             let mut pi = pi.clone();
@@ -157,19 +157,22 @@ fn cfr_rec(
 fn regret_matching(cum_cfr: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     let num_actions = cum_cfr.len();
     let private_info_set_len = cum_cfr[0].len();
-    let mut result = Vec::new();
+
     let mut denom = vec![0.0; private_info_set_len];
     for cum_cfr_action in cum_cfr {
         let mut tmp = cum_cfr_action.clone();
         nonneg_vector(&mut tmp);
         add_vector(&mut denom, &tmp);
     }
+
+    let mut result = Vec::with_capacity(num_actions);
     for cum_cfr_action in cum_cfr {
         let mut tmp = cum_cfr_action.clone();
         nonneg_vector(&mut tmp);
         div_vector(&mut tmp, &denom, 1.0 / num_actions as f64);
         result.push(tmp);
     }
+
     result
 }
 
@@ -179,6 +182,7 @@ pub fn train(root: &impl GameNode, num_iter: usize) -> HashMap<PublicInfoSet, Ve
     let mut cum_cfr = HashMap::new();
     let mut cum_sgm = HashMap::new();
     let pi = vec![1.0; root.private_info_set_len()];
+
     for iter in 0..num_iter {
         for player in 0..2 {
             cfr_rec(root, iter, player, &pi, &pi, &mut cum_cfr, &mut cum_sgm);
@@ -186,17 +190,23 @@ pub fn train(root: &impl GameNode, num_iter: usize) -> HashMap<PublicInfoSet, Ve
     }
 
     let mut average_strategy = HashMap::new();
+
     for (key, value) in &cum_sgm {
-        let mut result = Vec::new();
-        let mut denom = vec![0.0; value[0].len()];
+        let num_actions = value.len();
+        let private_info_set_len = value[0].len();
+
+        let mut denom = vec![0.0; private_info_set_len];
         for cum_sgm_action in value {
             add_vector(&mut denom, cum_sgm_action);
         }
+
+        let mut result = Vec::with_capacity(num_actions);
         for cum_sgm_action in value {
             let mut tmp = cum_sgm_action.clone();
             div_vector(&mut tmp, &denom, 0.0);
             result.push(tmp);
         }
+
         average_strategy.insert(key.clone(), result);
     }
 

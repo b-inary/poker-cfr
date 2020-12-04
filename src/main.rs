@@ -3,6 +3,7 @@ mod game_kuhn;
 mod game_push_fold;
 
 use game_kuhn::KuhnNode;
+use game_push_fold::PushFoldNode;
 use std::cmp::{max, min};
 use std::collections::BTreeMap;
 
@@ -33,7 +34,7 @@ fn kuhn() {
 }
 
 fn push_fold(eff_stack: f64) {
-    let push_fold_node = game_push_fold::PushFoldNode::new(eff_stack);
+    let push_fold_node = PushFoldNode::new(eff_stack);
     let strategy = cfr::train(&push_fold_node, 10000);
     let pusher = &strategy[&vec![]];
     let caller = &strategy[&vec![1]];

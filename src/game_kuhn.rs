@@ -50,7 +50,7 @@ impl GameNode for KuhnNode {
 
     #[inline]
     fn evaluate(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64> {
-        let mut ret = Vec::new();
+        let mut ret = Vec::with_capacity(self.private_info_set_len());
         for i in 0..self.private_info_set_len() {
             let mut cfvalue = 0.0;
             for j in 0..self.private_info_set_len() {
