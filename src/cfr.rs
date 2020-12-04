@@ -25,10 +25,7 @@ pub trait GameNode {
     fn private_info_set_len(&self) -> usize;
 
     /// Computes player's counterfactual values according to `pmi`.
-    fn get_cfvalues(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64>;
-
-    /// Computes player-0's expected value.
-    fn get_ev(&self, player: usize, pi: &Vec<f64>, pmi: &Vec<f64>) -> f64;
+    fn evaluate(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64>;
 }
 
 /// Vector-scalar multiplication.
@@ -83,6 +80,24 @@ fn div_vector(lhs: &mut Vec<f64>, rhs: &Vec<f64>, default: f64) {
     }
 }
 
+/// Element-wise max operation.
+#[inline]
+fn max_vector(lhs: &mut Vec<f64>, rhs: &Vec<f64>) {
+    for (l, r) in lhs.iter_mut().zip(rhs) {
+        *l = l.max(*r);
+    }
+}
+
+/// Computes inner product.
+#[inline]
+fn dot(lhs: &Vec<f64>, rhs: &Vec<f64>) -> f64 {
+    let mut ret = 0.0;
+    for (l, r) in lhs.iter().zip(rhs) {
+        ret += l * r;
+    }
+    ret
+}
+
 /// Performs counterfactual regret minimization.
 /// Returns: counterfactual value
 fn cfr_rec(
@@ -96,7 +111,7 @@ fn cfr_rec(
 ) -> Vec<f64> {
     // terminal node
     if node.is_terminal_node() {
-        return node.get_cfvalues(player, pmi);
+        return node.evaluate(player, pmi);
     }
 
     // initialize counterfactual value
@@ -185,41 +200,81 @@ fn compute_ev(
     player: usize,
     pi: &Vec<f64>,
     pmi: &Vec<f64>,
-    sigma_i: &HashMap<Vec<usize>, Vec<Vec<f64>>>,
-    sigma_mi: &HashMap<Vec<usize>, Vec<Vec<f64>>>,
+    sigma: &HashMap<Vec<usize>, Vec<Vec<f64>>>,
 ) -> f64 {
     if node.is_terminal_node() {
-        return node.get_ev(player, pi, pmi);
+        return dot(&node.evaluate(player, pmi), &pi);
     }
 
     let mut ev = 0.0;
     let public_info_set = node.public_info_set();
+    let strategy = &sigma[public_info_set];
 
     if node.current_player() == player {
-        let sigma = &sigma_i[public_info_set];
         for action in node.actions() {
             let mut pi = pi.clone();
-            mul_vector(&mut pi, &sigma[action]);
-            ev += compute_ev(&node.play(action), player, &pi, pmi, sigma_i, sigma_mi);
+            mul_vector(&mut pi, &strategy[action]);
+            ev += compute_ev(&node.play(action), player, &pi, pmi, sigma);
         }
     } else {
-        let sigma = &sigma_mi[public_info_set];
         for action in node.actions() {
             let mut pmi = pmi.clone();
-            mul_vector(&mut pmi, &sigma[action]);
-            ev += compute_ev(&node.play(action), player, pi, &pmi, sigma_i, sigma_mi);
+            mul_vector(&mut pmi, &strategy[action]);
+            ev += compute_ev(&node.play(action), player, pi, &pmi, sigma);
         }
     }
 
     ev
 }
 
+/// Computes best response.
+fn compute_best_response(
+    node: &impl GameNode,
+    player: usize,
+    pmi: &Vec<f64>,
+    sigma: &HashMap<Vec<usize>, Vec<Vec<f64>>>,
+) -> Vec<f64> {
+    if node.is_terminal_node() {
+        return node.evaluate(player, pmi);
+    }
+
+    let mut best_response;
+    let public_info_set = node.public_info_set();
+
+    if node.current_player() == player {
+        best_response = vec![f64::MIN; node.private_info_set_len()];
+        for action in node.actions() {
+            let tmp = compute_best_response(&node.play(action), player, pmi, sigma);
+            max_vector(&mut best_response, &tmp);
+        }
+    } else {
+        best_response = vec![0.0; node.private_info_set_len()];
+        let strategy = &sigma[public_info_set];
+        for action in node.actions() {
+            let mut pmi = pmi.clone();
+            mul_vector(&mut pmi, &strategy[action]);
+            let tmp = compute_best_response(&node.play(action), player, &pmi, sigma);
+            add_vector(&mut best_response, &tmp);
+        }
+    }
+
+    best_response
+}
+
+/// Computes exploitability.
+fn compute_exploitability(root: &impl GameNode, sigma: &HashMap<Vec<usize>, Vec<Vec<f64>>>) -> f64 {
+    let ones = vec![1.0; root.private_info_set_len()];
+    let br0 = compute_best_response(root, 0, &ones, sigma);
+    let br1 = compute_best_response(root, 1, &ones, sigma);
+    br0.iter().sum::<f64>() + br1.iter().sum::<f64>()
+}
+
 /// Performs training.
-/// Returns: obtained strategy
+/// Returns: (obtained strategy, player-0's EV, exploitability)
 pub fn train(
     root: &impl GameNode,
     num_iter: usize,
-) -> (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64) {
+) -> (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64) {
     let mut cum_cfr = HashMap::new();
     let mut cum_sgm = HashMap::new();
     let ones = vec![1.0; root.private_info_set_len()];
@@ -251,6 +306,7 @@ pub fn train(
         average_strategy.insert(key.clone(), result);
     }
 
-    let ev = compute_ev(root, 0, &ones, &ones, &average_strategy, &average_strategy);
-    (average_strategy, ev)
+    let ev = compute_ev(root, 0, &ones, &ones, &average_strategy);
+    let exploitability = compute_exploitability(root, &average_strategy);
+    (average_strategy, ev, exploitability)
 }

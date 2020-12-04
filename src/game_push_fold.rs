@@ -62,7 +62,10 @@ impl GameNode for PushFoldNode {
     }
 
     #[inline]
-    fn get_cfvalues(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64> {
+    fn evaluate(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64> {
+        let prob = (2. * 2.) / (52. * 51. * 50. * 49.);
+        let total = 2. * (48. * 47. * 46. * 45. * 44.) / (5. * 4. * 3. * 2.);
+
         // someone folded
         if self.public_info_set.last() == Some(&0) {
             let pmi_sum = pmi.iter().sum::<f64>();
@@ -86,7 +89,7 @@ impl GameNode for PushFoldNode {
             let mut ret = Vec::with_capacity(self.private_info_set_len());
             for i in 0..51 {
                 for j in (i + 1)..52 {
-                    ret.push(payoff * (pmi_sum - pmi_sum_ex[i] - pmi_sum_ex[j] + pmi[k]));
+                    ret.push(payoff * prob * (pmi_sum - pmi_sum_ex[i] - pmi_sum_ex[j] + pmi[k]));
                     k += 1;
                 }
             }
@@ -94,7 +97,6 @@ impl GameNode for PushFoldNode {
             return ret;
         }
 
-        let total = 2. * (48. * 47. * 46. * 45. * 44.) / (5. * 4. * 3. * 2.);
         let mut k = 0;
         let mut ret = Vec::with_capacity(self.private_info_set_len());
 
@@ -115,48 +117,7 @@ impl GameNode for PushFoldNode {
                         k += 1;
                     }
                 }
-                ret.push(cfvalue);
-            }
-        }
-
-        ret
-    }
-
-    #[inline]
-    fn get_ev(&self, player: usize, pi: &Vec<f64>, pmi: &Vec<f64>) -> f64 {
-        let prob = (2. * 2.) / (52. * 51. * 50. * 49.);
-        let total = 2. * (48. * 47. * 46. * 45. * 44.) / (5. * 4. * 3. * 2.);
-
-        let mut k = 0;
-        let mut k0 = 0;
-        let mut ret = 0.0;
-
-        for i in 0..51 {
-            for j in (i + 1)..52 {
-                let mut k1 = 0;
-                for m in 0..51 {
-                    for n in (m + 1)..52 {
-                        if i == m || i == n || j == m || j == n {
-                            k += 1;
-                            k1 += 1;
-                            continue;
-                        }
-                        let ev = match self.public_info_set.as_slice() {
-                            [0] => [-0.5, 0.5][player],
-                            [1, 0] => [1.0, -1.0][player],
-                            [1, 1] => {
-                                let eq = EQUITY_TABLE[k] as f64 / total;
-                                let eq_minus = 1.0 - eq;
-                                self.eff_stack * (eq - eq_minus)
-                            }
-                            _ => unreachable!(),
-                        };
-                        ret += ev * prob * pi[k0] * pmi[k1];
-                        k += 1;
-                        k1 += 1;
-                    }
-                }
-                k0 += 1;
+                ret.push(cfvalue * prob);
             }
         }
 

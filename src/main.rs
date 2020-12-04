@@ -14,15 +14,19 @@ fn main() {
 
 fn kuhn() {
     let kuhn_node = KuhnNode::new();
-    let (strategy, ev) = cfr::train(&kuhn_node, 100000);
+    let (strategy, ev, exploitability) = cfr::train(&kuhn_node, 100000);
     let strategy = strategy
         .into_iter()
         .map(|(key, value)| (KuhnNode::public_info_set_str(&key), value))
         .collect::<BTreeMap<_, _>>();
 
-    println!("[Kuhn poker] (left: check/fold%, right: bet/call%)");
+    println!();
+    println!("[Kuhn poker]");
+    println!("- Exploitability: {:+.3e}", exploitability);
     println!("- EV of first player: {:+.6}", ev);
     println!("- EV of second player: {:+.6}", -ev);
+    println!();
+    println!("(left: check/fold%, right: bet/call%)");
     for (key, value) in strategy {
         println!("- {}", key);
         for i in 0..3 {
@@ -38,7 +42,7 @@ fn kuhn() {
 
 fn push_fold(eff_stack: f64) {
     let push_fold_node = PushFoldNode::new(eff_stack);
-    let (strategy, ev) = cfr::train(&push_fold_node, 10000);
+    let (strategy, ev, exploitability) = cfr::train(&push_fold_node, 10000);
     let pusher = &strategy[&vec![]];
     let caller = &strategy[&vec![1]];
 
@@ -89,8 +93,10 @@ fn push_fold(eff_stack: f64) {
         "[Push/Fold heads-up hold'em] (effective stack = {}bb)",
         eff_stack
     );
+    println!("- Exploitability: {:+.3e}[bb]", exploitability);
+    println!();
     println!("Pusher (small blind):");
-    println!("- EV = {:+.6}bb", ev);
+    println!("- EV = {:+.6}[bb]", ev);
     println!("- Overall push rate = {:.2}%", 100.0 * overall_push_rate);
     println!(" |   A     K     Q     J     T     9     8     7     6     5     4     3     2");
     println!("-+------------------------------------------------------------------------------");
@@ -115,7 +121,7 @@ fn push_fold(eff_stack: f64) {
 
     println!();
     println!("Caller (big blind): ");
-    println!("- EV = {:+.6}bb", -ev);
+    println!("- EV = {:+.6}[bb]", -ev);
     println!("- Overall call rate = {:.2}%", 100.0 * overall_call_rate);
     println!(" |   A     K     Q     J     T     9     8     7     6     5     4     3     2");
     println!("-+------------------------------------------------------------------------------");
