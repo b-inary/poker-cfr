@@ -194,7 +194,7 @@ fn regret_matching(cum_cfr: &Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     result
 }
 
-/// Computes  `player`'s EV.
+/// Computes `player`'s EV.
 fn compute_ev(
     node: &impl GameNode,
     player: usize,
@@ -207,8 +207,7 @@ fn compute_ev(
     }
 
     let mut ev = 0.0;
-    let public_info_set = node.public_info_set();
-    let strategy = &sigma[public_info_set];
+    let strategy = &sigma[node.public_info_set()];
 
     if node.current_player() == player {
         for action in node.actions() {
@@ -239,7 +238,6 @@ fn compute_best_response(
     }
 
     let mut best_response;
-    let public_info_set = node.public_info_set();
 
     if node.current_player() == player {
         best_response = vec![f64::MIN; node.private_info_set_len()];
@@ -249,7 +247,7 @@ fn compute_best_response(
         }
     } else {
         best_response = vec![0.0; node.private_info_set_len()];
-        let strategy = &sigma[public_info_set];
+        let strategy = &sigma[node.public_info_set()];
         for action in node.actions() {
             let mut pmi = pmi.clone();
             mul_vector(&mut pmi, &strategy[action]);
@@ -269,6 +267,34 @@ fn compute_exploitability(root: &impl GameNode, sigma: &HashMap<Vec<usize>, Vec<
     br0.iter().sum::<f64>() + br1.iter().sum::<f64>()
 }
 
+/// Computes average strategy.
+fn compute_average_strategy(
+    cum_sigma: &HashMap<PublicInfoSet, Vec<Vec<f64>>>,
+) -> HashMap<PublicInfoSet, Vec<Vec<f64>>> {
+    let mut ret = HashMap::new();
+
+    for (key, value) in cum_sigma {
+        let num_actions = value.len();
+        let private_info_set_len = value[0].len();
+
+        let mut denom = vec![0.0; private_info_set_len];
+        for cum_sigma_action in value {
+            add_vector(&mut denom, cum_sigma_action);
+        }
+
+        let mut result = Vec::with_capacity(num_actions);
+        for cum_sigma_action in value {
+            let mut tmp = cum_sigma_action.clone();
+            div_vector(&mut tmp, &denom, 0.0);
+            result.push(tmp);
+        }
+
+        ret.insert(key.clone(), result);
+    }
+
+    ret
+}
+
 /// Performs training.
 /// Returns: (obtained strategy, player-0's EV, exploitability)
 pub fn train(
@@ -285,28 +311,8 @@ pub fn train(
         }
     }
 
-    let mut average_strategy = HashMap::new();
-
-    for (key, value) in &cum_sgm {
-        let num_actions = value.len();
-        let private_info_set_len = value[0].len();
-
-        let mut denom = vec![0.0; private_info_set_len];
-        for cum_sgm_action in value {
-            add_vector(&mut denom, cum_sgm_action);
-        }
-
-        let mut result = Vec::with_capacity(num_actions);
-        for cum_sgm_action in value {
-            let mut tmp = cum_sgm_action.clone();
-            div_vector(&mut tmp, &denom, 0.0);
-            result.push(tmp);
-        }
-
-        average_strategy.insert(key.clone(), result);
-    }
-
-    let ev = compute_ev(root, 0, &ones, &ones, &average_strategy);
-    let exploitability = compute_exploitability(root, &average_strategy);
-    (average_strategy, ev, exploitability)
+    let avg_sigma = compute_average_strategy(&cum_sgm);
+    let ev = compute_ev(root, 0, &ones, &ones, &avg_sigma);
+    let exploitability = compute_exploitability(root, &avg_sigma);
+    (avg_sigma, ev, exploitability)
 }
