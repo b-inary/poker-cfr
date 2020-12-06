@@ -1,5 +1,5 @@
 use crate::game_node::*;
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Write};
 
 /// Vector-scalar multiplication.
 #[inline]
@@ -282,10 +282,13 @@ pub fn train(
     let ones = vec![1.0; root.private_info_set_len()];
 
     for iter in 0..num_iter {
+        print!("\riteration: {} / {}", iter + 1, num_iter);
+        std::io::stdout().flush().unwrap();
         for player in 0..2 {
             cfr_rec(root, iter, player, &ones, &ones, &mut cum_cfr, &mut cum_sgm);
         }
     }
+    println!();
 
     let avg_sigma = compute_average_strategy(&cum_sgm);
     let ev = compute_ev(root, 0, &ones, &ones, &avg_sigma);

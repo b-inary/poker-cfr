@@ -1,21 +1,24 @@
 mod cfr;
 mod game_kuhn;
 mod game_node;
+mod game_preflop;
 mod game_push_fold;
 
 use game_kuhn::KuhnNode;
+use game_preflop::PreflopNode;
 use game_push_fold::PushFoldNode;
 use std::cmp::{max, min};
 use std::collections::BTreeMap;
 
 fn main() {
-    kuhn();
-    push_fold(10.0);
+    kuhn(100000);
+    push_fold(10.0, 10000);
+    preflop(30.0, 300);
 }
 
-fn kuhn() {
+fn kuhn(num_iter: usize) {
     let kuhn_node = KuhnNode::new();
-    let (strategy, ev, exploitability) = cfr::train(&kuhn_node, 100000);
+    let (strategy, ev, exploitability) = cfr::train(&kuhn_node, num_iter);
     let strategy = strategy
         .into_iter()
         .map(|(key, value)| (KuhnNode::public_info_set_str(&key), value))
@@ -41,9 +44,9 @@ fn kuhn() {
     }
 }
 
-fn push_fold(eff_stack: f64) {
+fn push_fold(eff_stack: f64, num_iter: usize) {
     let push_fold_node = PushFoldNode::new(eff_stack);
-    let (strategy, ev, exploitability) = cfr::train(&push_fold_node, 10000);
+    let (strategy, ev, exploitability) = cfr::train(&push_fold_node, num_iter);
     let pusher = &strategy[&vec![]];
     let caller = &strategy[&vec![1]];
 
@@ -143,5 +146,169 @@ fn push_fold(eff_stack: f64) {
             }
         }
         println!();
+    }
+}
+
+fn preflop(eff_stack: f64, num_iter: usize) {
+    let push_fold_node = PreflopNode::new(eff_stack);
+    let (strategy, ev, exploitability) = cfr::train(&push_fold_node, num_iter);
+    let bn_strategy = &strategy[&vec![]];
+    let mut bn_rate = vec![vec![vec![0.0; 13]; 13]; 7];
+    let mut bb_rate = vec![vec![vec![vec![0.0; 13]; 13]; 7]; 6];
+
+    for action in 0..7 {
+        let mut k = 0;
+        for i in 0..51 {
+            for j in (i + 1)..52 {
+                let rank1 = i / 4;
+                let rank2 = j / 4;
+                let suit1 = i % 4;
+                let suit2 = j % 4;
+                if suit1 == suit2 {
+                    bn_rate[action][min(rank1, rank2)][max(rank1, rank2)] += bn_strategy[action][k];
+                } else {
+                    bn_rate[action][max(rank1, rank2)][min(rank1, rank2)] += bn_strategy[action][k];
+                }
+                k += 1;
+            }
+        }
+    }
+
+    for bn_action in 0..6 {
+        let bb_strategy = &strategy[&vec![(bn_action + 1) as u8]];
+        let len = bb_strategy.len();
+        for bb_action in 0..len {
+            let mut k = 0;
+            for i in 0..51 {
+                for j in (i + 1)..52 {
+                    let rank1 = i / 4;
+                    let rank2 = j / 4;
+                    let suit1 = i % 4;
+                    let suit2 = j % 4;
+                    if suit1 == suit2 {
+                        bb_rate[bn_action][bb_action][min(rank1, rank2)][max(rank1, rank2)] +=
+                            bb_strategy[bb_action][k];
+                    } else {
+                        bb_rate[bn_action][bb_action][max(rank1, rank2)][min(rank1, rank2)] +=
+                            bb_strategy[bb_action][k];
+                    }
+                    k += 1;
+                }
+            }
+        }
+    }
+
+    for action in 0..7 {
+        for i in 0..13 {
+            for j in 0..13 {
+                let count = if i == j {
+                    6.0
+                } else if i < j {
+                    4.0
+                } else {
+                    12.0
+                };
+                bn_rate[action][i][j] /= count;
+            }
+        }
+    }
+
+    for bn_action in 0..6 {
+        for bb_action in 0..7 {
+            for i in 0..13 {
+                for j in 0..13 {
+                    let count = if i == j {
+                        6.0
+                    } else if i < j {
+                        4.0
+                    } else {
+                        12.0
+                    };
+                    bb_rate[bn_action][bb_action][i][j] /= count;
+                }
+            }
+        }
+    }
+
+    println!();
+    println!(
+        "[Pre-flop only heads-up hold'em] (effective stack = {}bb)",
+        eff_stack
+    );
+    println!("- Exploitability: {:+.3e}[bb]", exploitability);
+    println!();
+
+    println!("BN (small blind):");
+    println!("- EV = {:+.4}[bb]", ev);
+    for action in 0..7 {
+        println!();
+        println!(
+            "[{}%]",
+            ["Fold", "Call", "2x Bet", "2.5x Bet", "3x Bet", "4x Bet", "All in"][action]
+        );
+        println!(" |   A     K     Q     J     T     9     8     7     6     5     4     3     2");
+        println!(
+            "-+------------------------------------------------------------------------------"
+        );
+        for i in 0..13 {
+            let rank1 = 12 - i;
+            print!(
+                "{}|",
+                ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"][rank1]
+            );
+            for j in 0..13 {
+                let rank2 = 12 - j;
+                match ((bn_rate[action][rank2][rank1] + 0.1) * 5.0) as usize {
+                    0 => print!(" \x1b[37m  -  \x1b[37m"),
+                    1 => print!(" \x1b[91m*    \x1b[37m"),
+                    2 => print!(" \x1b[95m**   \x1b[37m"),
+                    3 => print!(" \x1b[94m***  \x1b[37m"),
+                    4 => print!(" \x1b[96m**** \x1b[37m"),
+                    5 => print!(" \x1b[92m*****\x1b[37m"),
+                    _ => unreachable!(),
+                }
+            }
+            println!();
+        }
+    }
+    println!();
+
+    println!("BB (big blind):");
+    println!("- EV = {:+.4}[bb]", -ev);
+    for bn_action in 0..6 {
+        for bb_action in 0..7 {
+            println!();
+            println!(
+                "[{} => {}%]",
+                ["Call", "2x Bet", "2.5x Bet", "3x Bet", "4x Bet", "All in"][bn_action],
+                ["Fold", "Call", "2x Bet", "2.5x Bet", "3x Bet", "4x Bet", "All in"][bb_action],
+            );
+            println!(
+                " |   A     K     Q     J     T     9     8     7     6     5     4     3     2"
+            );
+            println!(
+                "-+------------------------------------------------------------------------------"
+            );
+            for i in 0..13 {
+                let rank1 = 12 - i;
+                print!(
+                    "{}|",
+                    ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"][rank1]
+                );
+                for j in 0..13 {
+                    let rank2 = 12 - j;
+                    match ((bb_rate[bn_action][bb_action][rank2][rank1] + 0.1) * 5.0) as usize {
+                        0 => print!(" \x1b[37m  -  \x1b[37m"),
+                        1 => print!(" \x1b[91m*    \x1b[37m"),
+                        2 => print!(" \x1b[95m**   \x1b[37m"),
+                        3 => print!(" \x1b[94m***  \x1b[37m"),
+                        4 => print!(" \x1b[96m**** \x1b[37m"),
+                        5 => print!(" \x1b[92m*****\x1b[37m"),
+                        _ => unreachable!(),
+                    }
+                }
+                println!();
+            }
+        }
     }
 }
