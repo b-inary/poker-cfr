@@ -1,32 +1,5 @@
+use crate::game_node::*;
 use std::collections::HashMap;
-
-pub type PublicInfoSet = Vec<usize>;
-
-pub trait GameNode {
-    /// Returns whether the current node is a terminal node.
-    fn is_terminal_node(&self) -> bool;
-
-    /// Returns the current player's index.
-    fn current_player(&self) -> usize;
-
-    /// Returns the number of possible actions.
-    fn num_actions(&self) -> usize;
-
-    /// Returns a set of valid actions.
-    fn actions(&self) -> std::ops::Range<usize>;
-
-    /// Plays `action` and returns a node after `action` played.
-    fn play(&self, action: usize) -> Self;
-
-    /// Returns the public information set.
-    fn public_info_set(&self) -> &PublicInfoSet;
-
-    /// Returns the length of private information set.
-    fn private_info_set_len(&self) -> usize;
-
-    /// Computes player's counterfactual values according to `pmi`.
-    fn evaluate(&self, player: usize, pmi: &Vec<f64>) -> Vec<f64>;
-}
 
 /// Vector-scalar multiplication.
 #[inline]
@@ -200,7 +173,7 @@ fn compute_ev(
     player: usize,
     pi: &Vec<f64>,
     pmi: &Vec<f64>,
-    sigma: &HashMap<Vec<usize>, Vec<Vec<f64>>>,
+    sigma: &HashMap<PublicInfoSet, Vec<Vec<f64>>>,
 ) -> f64 {
     if node.is_terminal_node() {
         return dot(&node.evaluate(player, pmi), &pi);
@@ -231,7 +204,7 @@ fn compute_best_response(
     node: &impl GameNode,
     player: usize,
     pmi: &Vec<f64>,
-    sigma: &HashMap<Vec<usize>, Vec<Vec<f64>>>,
+    sigma: &HashMap<PublicInfoSet, Vec<Vec<f64>>>,
 ) -> Vec<f64> {
     if node.is_terminal_node() {
         return node.evaluate(player, pmi);
@@ -260,7 +233,10 @@ fn compute_best_response(
 }
 
 /// Computes exploitability.
-fn compute_exploitability(root: &impl GameNode, sigma: &HashMap<Vec<usize>, Vec<Vec<f64>>>) -> f64 {
+fn compute_exploitability(
+    root: &impl GameNode,
+    sigma: &HashMap<PublicInfoSet, Vec<Vec<f64>>>,
+) -> f64 {
     let ones = vec![1.0; root.private_info_set_len()];
     let br0 = compute_best_response(root, 0, &ones, sigma);
     let br1 = compute_best_response(root, 1, &ones, sigma);

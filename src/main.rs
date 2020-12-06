@@ -1,5 +1,6 @@
 mod cfr;
 mod game_kuhn;
+mod game_node;
 mod game_push_fold;
 
 use game_kuhn::KuhnNode;

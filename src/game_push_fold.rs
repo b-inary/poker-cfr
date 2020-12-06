@@ -1,4 +1,4 @@
-use crate::cfr::*;
+use crate::game_node::*;
 use bincode::deserialize;
 use once_cell::sync::Lazy;
 use std::fs::File;
@@ -47,7 +47,7 @@ impl GameNode for PushFoldNode {
     #[inline]
     fn play(&self, action: usize) -> Self {
         let mut ret = self.clone();
-        ret.public_info_set.push(action);
+        ret.public_info_set.push(action as u8);
         ret
     }
 
