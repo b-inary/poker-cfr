@@ -276,19 +276,24 @@ fn compute_average_strategy(
 pub fn train(
     root: &impl GameNode,
     num_iter: usize,
+    show_progress: bool,
 ) -> (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64) {
     let mut cum_cfr = HashMap::new();
     let mut cum_sgm = HashMap::new();
     let ones = vec![1.0; root.private_info_set_len()];
 
     for iter in 0..num_iter {
-        print!("\riteration: {} / {}", iter + 1, num_iter);
+        if show_progress {
+            print!("\riteration: {} / {}", iter + 1, num_iter);
+        }
         std::io::stdout().flush().unwrap();
         for player in 0..2 {
             cfr_rec(root, iter, player, &ones, &ones, &mut cum_cfr, &mut cum_sgm);
         }
     }
-    println!();
+    if show_progress {
+        println!();
+    }
 
     let avg_sigma = compute_average_strategy(&cum_sgm);
     let ev = compute_ev(root, 0, &ones, &ones, &avg_sigma);

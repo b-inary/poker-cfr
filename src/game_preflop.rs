@@ -1,6 +1,7 @@
 use crate::game_node::*;
 use bincode::deserialize;
 use once_cell::sync::Lazy;
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::Read;
 
@@ -116,31 +117,33 @@ impl GameNode for PreflopNode {
             return ret;
         }
 
-        let mut k = 0;
-        let mut ret = Vec::with_capacity(self.private_info_set_len());
-
-        for i in 0..51 {
-            for j in (i + 1)..52 {
-                let k_start = k;
-                let mut cfvalue = 0.0;
-                for m in 0..51 {
-                    for n in (m + 1)..52 {
-                        if i == m || i == n || j == m || j == n {
+        (0usize..51)
+            .into_par_iter()
+            .map(|i| {
+                let mut k = ((103 - i) * i / 2) * self.private_info_set_len();
+                let mut ret = Vec::with_capacity(51 - i);
+                for j in (i + 1)..52 {
+                    let k_start = k;
+                    let mut cfvalue = 0.0;
+                    for m in 0..51 {
+                        for n in (m + 1)..52 {
+                            if i == m || i == n || j == m || j == n {
+                                k += 1;
+                                continue;
+                            }
+                            let eq = EQUITY_TABLE[k] as f64 / total;
+                            let eq_minus = 1.0 - eq;
+                            let ev = self.cur_bet * (eq - eq_minus);
+                            cfvalue += ev * pmi[k - k_start];
                             k += 1;
-                            continue;
                         }
-                        let eq = EQUITY_TABLE[k] as f64 / total;
-                        let eq_minus = 1.0 - eq;
-                        let ev = self.cur_bet * (eq - eq_minus);
-                        cfvalue += ev * pmi[k - k_start];
-                        k += 1;
                     }
+                    ret.push(cfvalue * prob);
                 }
-                ret.push(cfvalue * prob);
-            }
-        }
-
-        ret
+                ret
+            })
+            .flatten()
+            .collect::<Vec<f64>>()
     }
 }
 

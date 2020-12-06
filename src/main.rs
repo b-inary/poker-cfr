@@ -13,12 +13,12 @@ use std::collections::BTreeMap;
 fn main() {
     kuhn(100000);
     push_fold(10.0, 10000);
-    preflop(30.0, 300);
+    preflop(10.0, 1000);
 }
 
 fn kuhn(num_iter: usize) {
     let kuhn_node = KuhnNode::new();
-    let (strategy, ev, exploitability) = cfr::train(&kuhn_node, num_iter);
+    let (strategy, ev, exploitability) = cfr::train(&kuhn_node, num_iter, false);
     let strategy = strategy
         .into_iter()
         .map(|(key, value)| (KuhnNode::public_info_set_str(&key), value))
@@ -46,7 +46,7 @@ fn kuhn(num_iter: usize) {
 
 fn push_fold(eff_stack: f64, num_iter: usize) {
     let push_fold_node = PushFoldNode::new(eff_stack);
-    let (strategy, ev, exploitability) = cfr::train(&push_fold_node, num_iter);
+    let (strategy, ev, exploitability) = cfr::train(&push_fold_node, num_iter, false);
     let pusher = &strategy[&vec![]];
     let caller = &strategy[&vec![1]];
 
@@ -151,7 +151,7 @@ fn push_fold(eff_stack: f64, num_iter: usize) {
 
 fn preflop(eff_stack: f64, num_iter: usize) {
     let push_fold_node = PreflopNode::new(eff_stack);
-    let (strategy, ev, exploitability) = cfr::train(&push_fold_node, num_iter);
+    let (strategy, ev, exploitability) = cfr::train(&push_fold_node, num_iter, true);
     let bn_strategy = &strategy[&vec![]];
     let mut bn_rate = vec![vec![vec![0.0; 13]; 13]; 7];
     let mut bb_rate = vec![vec![vec![vec![0.0; 13]; 13]; 7]; 6];
