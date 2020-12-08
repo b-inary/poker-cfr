@@ -1,7 +1,6 @@
 use crate::game_node::*;
 use bincode::deserialize;
 use once_cell::sync::Lazy;
-use rayon::prelude::*;
 use std::fs::File;
 use std::io::Read;
 
@@ -14,7 +13,7 @@ static EQUITY_TABLE: Lazy<Vec<u32>> = Lazy::new(|| {
     decoded
 });
 
-// 0 => Fold, 1 => Call, 2 => 2x bet, 3 => 2.5x bet, 4 => 3x bet, 5 => 4x bet, 6 => All in
+// 0 => Fold, 1 => Call, 2 => 3x bet, 3 => 4x bet, 4 => All in
 #[derive(Clone, Debug)]
 pub struct PreflopNode {
     prev_bet: f64,
@@ -43,8 +42,6 @@ impl GameNode for PreflopNode {
         let ratio = self.eff_stack / self.cur_bet;
         let mut ret = 2;
         ret += (ratio > 1.0) as usize;
-        ret += (ratio > 2.0) as usize;
-        ret += (ratio > 2.5) as usize;
         ret += (ratio > 3.0) as usize;
         ret += (ratio > 4.0) as usize;
         ret
@@ -61,11 +58,9 @@ impl GameNode for PreflopNode {
         if action > 0 {
             ret.prev_bet = ret.cur_bet;
             ret.cur_bet *= match action {
-                2 => 2.0,
-                3 => 2.5,
-                4 => 3.0,
-                5 => 4.0,
-                6 => self.eff_stack,
+                2 => 3.0,
+                3 => 4.0,
+                4 => self.eff_stack,
                 _ => 1.0,
             };
             ret.cur_bet.max(self.eff_stack);
@@ -117,33 +112,31 @@ impl GameNode for PreflopNode {
             return ret;
         }
 
-        (0usize..51)
-            .into_par_iter()
-            .map(|i| {
-                let mut k = ((103 - i) * i / 2) * self.private_info_set_len();
-                let mut ret = Vec::with_capacity(51 - i);
-                for j in (i + 1)..52 {
-                    let k_start = k;
-                    let mut cfvalue = 0.0;
-                    for m in 0..51 {
-                        for n in (m + 1)..52 {
-                            if i == m || i == n || j == m || j == n {
-                                k += 1;
-                                continue;
-                            }
-                            let eq = EQUITY_TABLE[k] as f64 / total;
-                            let eq_minus = 1.0 - eq;
-                            let ev = self.cur_bet * (eq - eq_minus);
-                            cfvalue += ev * pmi[k - k_start];
+        let mut k = 0;
+        let mut ret = Vec::with_capacity(self.private_info_set_len());
+
+        for i in 0..51 {
+            for j in (i + 1)..52 {
+                let k_start = k;
+                let mut cfvalue = 0.0;
+                for m in 0..51 {
+                    for n in (m + 1)..52 {
+                        if i == m || i == n || j == m || j == n {
                             k += 1;
+                            continue;
                         }
+                        let eq = EQUITY_TABLE[k] as f64 / total;
+                        let eq_minus = 1.0 - eq;
+                        let ev = self.cur_bet * (eq - eq_minus);
+                        cfvalue += ev * pmi[k - k_start];
+                        k += 1;
                     }
-                    ret.push(cfvalue * prob);
                 }
-                ret
-            })
-            .flatten()
-            .collect::<Vec<f64>>()
+                ret.push(cfvalue * prob);
+            }
+        }
+
+        ret
     }
 }
 

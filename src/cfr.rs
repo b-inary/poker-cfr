@@ -1,5 +1,8 @@
 use crate::game_node::*;
-use std::{collections::HashMap, io::Write};
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::io::Write;
+use std::sync::Mutex;
 
 /// Vector-scalar multiplication.
 #[inline]
@@ -71,9 +74,44 @@ fn dot(lhs: &Vec<f64>, rhs: &Vec<f64>) -> f64 {
     ret
 }
 
+/// Builds default tree.
+fn build_tree(node: &impl GameNode, tree: &mut HashMap<PublicInfoSet, Vec<Vec<f64>>>) {
+    if node.is_terminal_node() {
+        return;
+    }
+
+    tree.insert(
+        node.public_info_set().clone(),
+        vec![vec![0.0; node.private_info_set_len()]; node.num_actions()],
+    );
+
+    for action in node.actions() {
+        build_tree(&node.play(action), tree);
+    }
+}
+
+/// Builds default tree (multi-threaded version).
+fn build_tree_mt(node: &impl GameNode, tree: &mut HashMap<PublicInfoSet, Mutex<Vec<Vec<f64>>>>) {
+    if node.is_terminal_node() {
+        return;
+    }
+
+    tree.insert(
+        node.public_info_set().clone(),
+        Mutex::new(vec![
+            vec![0.0; node.private_info_set_len()];
+            node.num_actions()
+        ]),
+    );
+
+    for action in node.actions() {
+        build_tree_mt(&node.play(action), tree);
+    }
+}
+
 /// Performs counterfactual regret minimization.
 /// Returns: counterfactual value
-fn cfr_rec(
+fn cfr(
     node: &impl GameNode,
     iter: usize,
     player: usize,
@@ -93,13 +131,6 @@ fn cfr_rec(
     // get current public information set
     let public_info_set = node.public_info_set();
 
-    // create default entries when newly visited
-    if !cum_cfr.contains_key(public_info_set) {
-        let default = vec![vec![0.0; node.private_info_set_len()]; node.num_actions()];
-        cum_cfr.insert(public_info_set.clone(), default.clone());
-        cum_sgm.insert(public_info_set.clone(), default.clone());
-    }
-
     // compute current sigma
     let sigma = regret_matching(&cum_cfr[public_info_set]);
 
@@ -109,7 +140,7 @@ fn cfr_rec(
         for action in node.actions() {
             let mut pi = pi.clone();
             mul_vector(&mut pi, &sigma[action]);
-            let mut tmp = cfr_rec(&node.play(action), iter, player, &pi, pmi, cum_cfr, cum_sgm);
+            let mut tmp = cfr(&node.play(action), iter, player, &pi, pmi, cum_cfr, cum_sgm);
             cfvalue_action.push(tmp.clone());
             mul_vector(&mut tmp, &sigma[action]);
             add_vector(&mut cfvalue, &tmp);
@@ -136,9 +167,96 @@ fn cfr_rec(
         for action in node.actions() {
             let mut pmi = pmi.clone();
             mul_vector(&mut pmi, &sigma[action]);
-            let tmp = cfr_rec(&node.play(action), iter, player, pi, &pmi, cum_cfr, cum_sgm);
+            let tmp = cfr(&node.play(action), iter, player, pi, &pmi, cum_cfr, cum_sgm);
             add_vector(&mut cfvalue, &tmp);
         }
+    }
+
+    cfvalue
+}
+
+/// Performs counterfactual regret minimization (multi-threaded version).
+/// Returns: counterfactual value
+fn cfr_mt(
+    node: &impl GameNode,
+    iter: usize,
+    player: usize,
+    pi: &Vec<f64>,
+    pmi: &Vec<f64>,
+    cum_cfr: &HashMap<PublicInfoSet, Mutex<Vec<Vec<f64>>>>,
+    cum_sgm: &HashMap<PublicInfoSet, Mutex<Vec<Vec<f64>>>>,
+) -> Vec<f64> {
+    // terminal node
+    if node.is_terminal_node() {
+        return node.evaluate(player, pmi);
+    }
+
+    // get current public information set
+    let public_info_set = node.public_info_set();
+
+    // compute current sigma
+    let sigma = regret_matching(&cum_cfr[public_info_set].lock().unwrap());
+
+    let cfvalue;
+    if node.current_player() == player {
+        let mut cfvalue_action = Vec::with_capacity(node.num_actions());
+        for _ in node.actions() {
+            cfvalue_action.push(Mutex::new(Vec::new()));
+        }
+
+        cfvalue = node
+            .actions()
+            .into_par_iter()
+            .map(|action| {
+                let mut pi = pi.clone();
+                mul_vector(&mut pi, &sigma[action]);
+                let mut tmp = cfr_mt(&node.play(action), iter, player, &pi, pmi, cum_cfr, cum_sgm);
+                *cfvalue_action[action].lock().unwrap() = tmp.clone();
+                mul_vector(&mut tmp, &sigma[action]);
+                tmp
+            })
+            .reduce(
+                || vec![0.0; node.private_info_set_len()],
+                |mut v, w| {
+                    add_vector(&mut v, &w);
+                    v
+                },
+            );
+
+        // update cumulative regrets and sigmas
+        let mut cum_cfr = cum_cfr[public_info_set].lock().unwrap();
+        let mut cum_sgm = cum_sgm[public_info_set].lock().unwrap();
+        for action in node.actions() {
+            let r = &mut cum_cfr[action];
+            let mut pi = pi.clone();
+            add_vector(r, &cfvalue_action[action].lock().unwrap());
+            sub_vector(r, &cfvalue);
+
+            // Regret-matching+
+            nonneg_vector(r);
+
+            // CFR+
+            mul_scalar(&mut pi, iter as f64);
+
+            mul_vector(&mut pi, &sigma[action]);
+            add_vector(&mut cum_sgm[action], &pi);
+        }
+    } else {
+        cfvalue = node
+            .actions()
+            .into_par_iter()
+            .map(|action| {
+                let mut pmi = pmi.clone();
+                mul_vector(&mut pmi, &sigma[action]);
+                cfr_mt(&node.play(action), iter, player, pi, &pmi, cum_cfr, cum_sgm)
+            })
+            .reduce(
+                || vec![0.0; node.private_info_set_len()],
+                |mut v, w| {
+                    add_vector(&mut v, &w);
+                    v
+                },
+            );
     }
 
     cfvalue
@@ -179,24 +297,27 @@ fn compute_ev(
         return dot(&node.evaluate(player, pmi), &pi);
     }
 
-    let mut ev = 0.0;
     let strategy = &sigma[node.public_info_set()];
 
     if node.current_player() == player {
-        for action in node.actions() {
-            let mut pi = pi.clone();
-            mul_vector(&mut pi, &strategy[action]);
-            ev += compute_ev(&node.play(action), player, &pi, pmi, sigma);
-        }
+        node.actions()
+            .into_par_iter()
+            .map(|action| {
+                let mut pi = pi.clone();
+                mul_vector(&mut pi, &strategy[action]);
+                compute_ev(&node.play(action), player, &pi, pmi, sigma)
+            })
+            .sum::<f64>()
     } else {
-        for action in node.actions() {
-            let mut pmi = pmi.clone();
-            mul_vector(&mut pmi, &strategy[action]);
-            ev += compute_ev(&node.play(action), player, pi, &pmi, sigma);
-        }
+        node.actions()
+            .into_par_iter()
+            .map(|action| {
+                let mut pmi = pmi.clone();
+                mul_vector(&mut pmi, &strategy[action]);
+                compute_ev(&node.play(action), player, pi, &pmi, sigma)
+            })
+            .sum::<f64>()
     }
-
-    ev
 }
 
 /// Computes best response.
@@ -210,26 +331,34 @@ fn compute_best_response(
         return node.evaluate(player, pmi);
     }
 
-    let mut best_response;
-
     if node.current_player() == player {
-        best_response = vec![f64::MIN; node.private_info_set_len()];
-        for action in node.actions() {
-            let tmp = compute_best_response(&node.play(action), player, pmi, sigma);
-            max_vector(&mut best_response, &tmp);
-        }
+        node.actions()
+            .into_par_iter()
+            .map(|action| compute_best_response(&node.play(action), player, pmi, sigma))
+            .reduce(
+                || vec![f64::MIN; node.private_info_set_len()],
+                |mut v, w| {
+                    max_vector(&mut v, &w);
+                    v
+                },
+            )
     } else {
-        best_response = vec![0.0; node.private_info_set_len()];
         let strategy = &sigma[node.public_info_set()];
-        for action in node.actions() {
-            let mut pmi = pmi.clone();
-            mul_vector(&mut pmi, &strategy[action]);
-            let tmp = compute_best_response(&node.play(action), player, &pmi, sigma);
-            add_vector(&mut best_response, &tmp);
-        }
+        node.actions()
+            .into_par_iter()
+            .map(|action| {
+                let mut pmi = pmi.clone();
+                mul_vector(&mut pmi, &strategy[action]);
+                compute_best_response(&node.play(action), player, &pmi, sigma)
+            })
+            .reduce(
+                || vec![0.0; node.private_info_set_len()],
+                |mut v, w| {
+                    add_vector(&mut v, &w);
+                    v
+                },
+            )
     }
-
-    best_response
 }
 
 /// Computes exploitability.
@@ -271,6 +400,35 @@ fn compute_average_strategy(
     ret
 }
 
+/// Computes average strategy (multi-threaded version).
+fn compute_average_strategy_mt(
+    cum_sigma: &HashMap<PublicInfoSet, Mutex<Vec<Vec<f64>>>>,
+) -> HashMap<PublicInfoSet, Vec<Vec<f64>>> {
+    let mut ret = HashMap::new();
+
+    for (key, value) in cum_sigma {
+        let value = value.lock().unwrap();
+        let num_actions = value.len();
+        let private_info_set_len = value[0].len();
+
+        let mut denom = vec![0.0; private_info_set_len];
+        for cum_sigma_action in value.iter() {
+            add_vector(&mut denom, &cum_sigma_action);
+        }
+
+        let mut result = Vec::with_capacity(num_actions);
+        for cum_sigma_action in value.iter() {
+            let mut tmp = cum_sigma_action.clone();
+            div_vector(&mut tmp, &denom, 0.0);
+            result.push(tmp);
+        }
+
+        ret.insert(key.clone(), result);
+    }
+
+    ret
+}
+
 /// Performs training.
 /// Returns: (obtained strategy, player-0's EV, exploitability)
 pub fn train(
@@ -278,9 +436,11 @@ pub fn train(
     num_iter: usize,
     show_progress: bool,
 ) -> (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64) {
+    let ones = vec![1.0; root.private_info_set_len()];
     let mut cum_cfr = HashMap::new();
     let mut cum_sgm = HashMap::new();
-    let ones = vec![1.0; root.private_info_set_len()];
+    build_tree(root, &mut cum_cfr);
+    build_tree(root, &mut cum_sgm);
 
     for iter in 0..num_iter {
         if show_progress {
@@ -288,7 +448,7 @@ pub fn train(
         }
         std::io::stdout().flush().unwrap();
         for player in 0..2 {
-            cfr_rec(root, iter, player, &ones, &ones, &mut cum_cfr, &mut cum_sgm);
+            cfr(root, iter, player, &ones, &ones, &mut cum_cfr, &mut cum_sgm);
         }
     }
     if show_progress {
@@ -296,6 +456,38 @@ pub fn train(
     }
 
     let avg_sigma = compute_average_strategy(&cum_sgm);
+    let ev = compute_ev(root, 0, &ones, &ones, &avg_sigma);
+    let exploitability = compute_exploitability(root, &avg_sigma);
+    (avg_sigma, ev, exploitability)
+}
+
+/// Performs training (multi-threaded version).
+/// Returns: (obtained strategy, player-0's EV, exploitability)
+pub fn train_mt(
+    root: &impl GameNode,
+    num_iter: usize,
+    show_progress: bool,
+) -> (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64) {
+    let ones = vec![1.0; root.private_info_set_len()];
+    let mut cum_cfr = HashMap::new();
+    let mut cum_sgm = HashMap::new();
+    build_tree_mt(root, &mut cum_cfr);
+    build_tree_mt(root, &mut cum_sgm);
+
+    for iter in 0..num_iter {
+        if show_progress {
+            print!("\riteration: {} / {}", iter + 1, num_iter);
+        }
+        std::io::stdout().flush().unwrap();
+        for player in 0..2 {
+            cfr_mt(root, iter, player, &ones, &ones, &cum_cfr, &cum_sgm);
+        }
+    }
+    if show_progress {
+        println!();
+    }
+
+    let avg_sigma = compute_average_strategy_mt(&cum_sgm);
     let ev = compute_ev(root, 0, &ones, &ones, &avg_sigma);
     let exploitability = compute_exploitability(root, &avg_sigma);
     (avg_sigma, ev, exploitability)

@@ -1,6 +1,6 @@
 pub type PublicInfoSet = Vec<u8>;
 
-pub trait GameNode {
+pub trait GameNode: Clone + Sync {
     /// Returns whether the current node is a terminal node.
     fn is_terminal_node(&self) -> bool;
 
