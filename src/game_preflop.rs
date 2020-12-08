@@ -9,8 +9,7 @@ static EQUITY_TABLE: Lazy<Vec<u32>> = Lazy::new(|| {
     let mut infile = File::open(path).expect(&format!("could not open '{}'", path));
     let mut buf = Vec::new();
     infile.read_to_end(&mut buf).unwrap();
-    let decoded = deserialize::<Vec<u32>>(&buf).unwrap();
-    decoded
+    deserialize::<Vec<u32>>(&buf).unwrap()
 });
 
 // 0 => Fold, 1 => Call, 2 => 3x bet, 3 => 4x bet, 4 => All in
