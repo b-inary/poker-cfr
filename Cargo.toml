@@ -8,8 +8,11 @@ default-run = "kuhn"
 [dependencies]
 bincode = "1.3.1"
 clap = "3.0.0-beta.2"
+crossterm = "0.18.2"
 once_cell = "1.5.2"
+ordered-float = "2.0.1"
 rayon = "1.5.0"
+regex = "1.4.2"
 
 [[bin]]
 name = "kuhn"
@@ -22,3 +25,7 @@ path = "src/main_preflop.rs"
 [[bin]]
 name = "push_fold"
 path = "src/main_push_fold.rs"
+
+[[bin]]
+name = "viewer"
+path = "src/main_viewer.rs"
