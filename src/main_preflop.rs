@@ -5,22 +5,30 @@ mod game_node;
 mod game_preflop;
 
 use bincode::{deserialize, serialize};
+use clap::Clap;
 use game_preflop::PreflopNode;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Result, Write};
 use std::path::Path;
 
-fn main() -> Result<()> {
-    let eff_stack = 10.0;
-    let num_iter = 1000;
+#[derive(Clap)]
+#[clap(version = "0.1.0", author = "Wataru Inariba <oinari17@gmail.com>")]
+struct Opts {
+    #[clap(short, long, default_value = "10.0")]
+    stack: f64,
+    #[clap(short, long, default_value = "1000")]
+    iteration: usize,
+}
 
-    let path = format!("output/preflop-{}-{}.bin", eff_stack, num_iter);
+fn main() -> Result<()> {
+    let opts = Opts::parse();
+    let path = format!("output/preflop-{}-{}.bin", opts.stack, opts.iteration);
     let file_exists = Path::new(&path).exists();
 
     println!(
         "[Pre-flop only heads-up hold'em] (effective stack = {}bb)",
-        eff_stack
+        opts.stack
     );
 
     let (strategy, ev, exploitability) = if file_exists {
@@ -29,8 +37,8 @@ fn main() -> Result<()> {
         infile.read_to_end(&mut buf)?;
         deserialize::<(HashMap<Vec<u8>, Vec<Vec<f64>>>, f64, f64)>(&buf).unwrap()
     } else {
-        let push_fold_node = PreflopNode::new(eff_stack);
-        cfr::train_mt(&push_fold_node, num_iter, true)
+        let push_fold_node = PreflopNode::new(opts.stack);
+        cfr::train_mt(&push_fold_node, opts.iteration, true)
     };
 
     println!("- Exploitability: {:+.3e}[bb]", exploitability);

@@ -12,7 +12,7 @@ static EQUITY_TABLE: Lazy<Vec<u32>> = Lazy::new(|| {
     deserialize::<Vec<u32>>(&buf).unwrap()
 });
 
-// 0 => Fold, 1 => Call, 2 => 3x bet, 3 => 4x bet, 4 => All in
+// 0 => Fold, 1 => Call, 2 => 2.5x bet, 3 => 3x bet, 4 => 3.5x bet, 5 => 4x bet, 6 => All in
 #[derive(Clone, Debug)]
 pub struct PreflopNode {
     prev_bet: f64,
@@ -41,7 +41,9 @@ impl GameNode for PreflopNode {
         let ratio = self.eff_stack / self.cur_bet;
         let mut ret = 2;
         ret += (ratio > 1.0) as usize;
+        ret += (ratio > 2.5) as usize;
         ret += (ratio > 3.0) as usize;
+        ret += (ratio > 3.5) as usize;
         ret += (ratio > 4.0) as usize;
         ret
     }
@@ -57,9 +59,11 @@ impl GameNode for PreflopNode {
         if action > 0 {
             ret.prev_bet = ret.cur_bet;
             ret.cur_bet *= match action {
-                2 => 3.0,
-                3 => 4.0,
-                4 => self.eff_stack,
+                2 => 2.5,
+                3 => 3.0,
+                4 => 3.5,
+                5 => 4.0,
+                6 => self.eff_stack,
                 _ => 1.0,
             };
             ret.cur_bet.max(self.eff_stack);
