@@ -1,6 +1,8 @@
 use crate::game_node::*;
+use bincode::serialize;
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::Write;
 use std::sync::Mutex;
 
@@ -467,6 +469,7 @@ pub fn train_mt(
     root: &impl GameNode,
     num_iter: usize,
     show_progress: bool,
+    outpath_opt: Option<impl Fn(usize) -> String>,
 ) -> (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64) {
     let ones = vec![1.0; root.private_info_set_len()];
     let mut cum_cfr = HashMap::new();
@@ -482,9 +485,32 @@ pub fn train_mt(
         for player in 0..2 {
             cfr_mt(root, iter, player, &ones, &ones, &cum_cfr, &cum_sgm);
         }
+        if (iter + 1) % 1000 == 0 {
+            let avg_sigma = compute_average_strategy_mt(&cum_sgm);
+            let exploitability = compute_exploitability(root, &avg_sigma);
+            print!(" (exploitability = {:+.3e}[bb])", exploitability);
+            std::io::stdout().flush().unwrap();
+            if let Some(outpath_fn) = &outpath_opt {
+                if iter >= 1000 {
+                    let prevpath = outpath_fn(iter - 999);
+                    std::fs::remove_file(prevpath).unwrap();
+                }
+                let outpath = outpath_fn(iter + 1);
+                let ev = compute_ev(root, 0, &ones, &ones, &avg_sigma);
+                let encoded = serialize(&(avg_sigma, ev, exploitability)).unwrap();
+                let mut outfile = File::create(&outpath).unwrap();
+                outfile.write_all(&encoded).unwrap();
+            }
+        }
     }
     if show_progress {
         println!();
+    }
+    if let Some(outpath_fn) = &outpath_opt {
+        if num_iter >= 1000 {
+            let prevpath = outpath_fn(num_iter - num_iter % 1000);
+            std::fs::remove_file(prevpath).unwrap();
+        }
     }
 
     let avg_sigma = compute_average_strategy_mt(&cum_sgm);

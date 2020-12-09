@@ -87,7 +87,7 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
         let (start, offset) = if 23 * indices.len() - 15 > terminal_width as usize {
             queue!(stdout, cursor::MoveTo(0, 5), style::Print("(omitted)"))?;
             let start = indices.len() - (terminal_width as usize - 10) / 23;
-            (start, 23 * start - 9)
+            (start, 23 * start - 10)
         } else {
             (1, 15)
         };

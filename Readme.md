@@ -25,7 +25,7 @@ Solve Nash equilibrium of heads-up push/fold hold'em, i.e., the heads-up poker o
 
 - `main_preflop.rs` (`$ cargo run --release --bin preflop`)
 
-Solve Nash equilibrium of pre-flop only heads-up hold'em (that is, every player checks after flop opens). Currently, the bet size is set to 2.5x, 3x, 3.5x, 4x, and all-in.
+Solve Nash equilibrium of pre-flop-only heads-up hold'em (that is, every player checks after flop opens). Currently, the bet size is set to 2.5x, 3x, 3.5x, 4x, and all-in.
 
 - `main_viewer.rs` (`$ cargo run --bin viewer`)
 

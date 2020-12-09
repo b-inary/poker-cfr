@@ -39,7 +39,12 @@ fn main() -> Result<()> {
         deserialize::<(HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64)>(&buf).unwrap()
     } else {
         let push_fold_node = PreflopNode::new(opts.stack);
-        cfr::train_mt(&push_fold_node, opts.iteration, true)
+        cfr::train_mt(
+            &push_fold_node,
+            opts.iteration,
+            true,
+            Some(|iter| format!("output/preflop-{}-{}.bin", opts.stack, iter)),
+        )
     };
 
     println!("- Exploitability: {:+.3e}[bb]", exploitability);
