@@ -147,6 +147,8 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
                 for j in 0..num_indices[i] {
                     let action = if j >= 2 && j + 1 == num_indices[i] {
                         "All-in"
+                    } else if (i, j) == (2, 1) && indices[1] == 1 {
+                        "Check"
                     } else {
                         ["Fold", "Call", "Bet 2.5x", "Bet 3x", "Bet 3.5x", "Bet 4x"][j]
                     };
