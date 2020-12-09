@@ -70,7 +70,8 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
         cursor::Hide,
     )?;
 
-    let terminal_width = terminal::size()?.0;
+    let (terminal_width, terminal_height) = terminal::size()?;
+    let mut first_index_top = 0;
     let mut indices = vec![0];
     let mut num_indices = vec![outputs.len()];
     let mut output: &OutputType = &(HashMap::new(), 0.0, 0.0);
@@ -86,14 +87,25 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
         let (start, offset) = if 23 * indices.len() - 15 > terminal_width as usize {
             queue!(stdout, cursor::MoveTo(0, 5), style::Print("(omitted)"))?;
             let start = indices.len() - (terminal_width as usize - 10) / 23;
-            (start, 23 * start - 10)
+            (start, 23 * start - 9)
         } else {
-            (1, 14)
+            (1, 15)
         };
 
         if start == 1 {
             for (i, (stack, _)) in outputs.iter().enumerate() {
-                queue!(stdout, cursor::MoveTo(0, i as u16 + 2))?;
+                if i < first_index_top || first_index_top + 6 < i {
+                    continue;
+                }
+                queue!(stdout, cursor::MoveTo(0, (i - first_index_top + 2) as u16))?;
+                if first_index_top > 0 && i == first_index_top {
+                    queue!(stdout, style::Print("    ^  "))?;
+                    continue;
+                }
+                if i + 1 < outputs.len() && i == first_index_top + 6 {
+                    queue!(stdout, style::Print("    v  "))?;
+                    continue;
+                }
                 if i == indices[0] {
                     queue!(stdout, style::SetAttribute(style::Attribute::Bold))?;
                 }
@@ -103,7 +115,7 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
                 queue!(
                     stdout,
                     style::Print(format!(
-                        "{} {:>2}[bb]",
+                        "{} {:>3}bb",
                         [' ', '*'][(i == indices[0]) as usize],
                         stack
                     )),
@@ -236,16 +248,24 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
                 )?;
             }
 
-            queue!(
-                stdout,
-                cursor::MoveTo(0, 26),
-                style::Print(format!(
-                    "- EV: {:+.4}[bb] (SB) / {:+.4}[bb] (BB)",
-                    output.1, -output.1
-                )),
-                cursor::MoveTo(0, 27),
-                style::Print(format!("- Exploitability: {:+.3e}[bb]", output.2)),
-            )?;
+            if terminal_height > 26 {
+                queue!(
+                    stdout,
+                    cursor::MoveTo(0, 26),
+                    style::Print(format!(
+                        "- EV: {:+.4}[bb] (SB) / {:+.4}[bb] (BB)",
+                        output.1, -output.1
+                    )),
+                )?;
+            }
+
+            if terminal_height > 27 {
+                queue!(
+                    stdout,
+                    cursor::MoveTo(0, 27),
+                    style::Print(format!("- Exploitability: {:+.3e}[bb]", output.2)),
+                )?;
+            }
         }
 
         // flush queue
@@ -258,16 +278,38 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
 
             // Up key
             Event::Key(key_ev) if key_ev == KeyCode::Up.into() => {
-                let last_index = indices.last_mut().unwrap();
-                let last_num_index = num_indices.last().unwrap();
-                *last_index = (*last_index + *last_num_index - 1) % *last_num_index;
+                let len = indices.len();
+                let index = indices.last_mut().unwrap();
+                let num_index = num_indices.last().unwrap();
+                if *index == 0 {
+                    *index = *num_index - 1;
+                    if len == 1 && *num_index > 7 {
+                        first_index_top = *num_index - 7;
+                    }
+                } else {
+                    *index -= 1;
+                    if len == 1 && *index > 0 && *index == first_index_top {
+                        first_index_top -= 1;
+                    }
+                }
             }
 
             // Down key
             Event::Key(key_ev) if key_ev == KeyCode::Down.into() => {
-                let last_index = indices.last_mut().unwrap();
-                let last_num_index = num_indices.last().unwrap();
-                *last_index = (*last_index + 1) % last_num_index;
+                let len = indices.len();
+                let index = indices.last_mut().unwrap();
+                let num_index = num_indices.last().unwrap();
+                if *index + 1 == *num_index {
+                    *index = 0;
+                    if len == 1 {
+                        first_index_top = 0;
+                    }
+                } else {
+                    *index += 1;
+                    if len == 1 && *index + 1 < *num_index && *index == first_index_top + 6 {
+                        first_index_top += 1;
+                    }
+                }
             }
 
             // Enter or Right key
