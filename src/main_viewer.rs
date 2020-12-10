@@ -70,7 +70,7 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
     )?;
 
     let (terminal_width, terminal_height) = terminal::size()?;
-    let mut first_index_top = 0;
+    let mut files_top_index = 0;
     let mut indices = vec![0];
     let mut num_indices = vec![outputs.len()];
     let mut output: &OutputType = &(HashMap::new(), 0.0, 0.0);
@@ -83,25 +83,25 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
             style::Print("Press 'q' to quit."),
         )?;
 
-        let (start, offset) = if 23 * indices.len() - 15 > terminal_width as usize {
+        let (col_display_start, offset) = if 23 * indices.len() - 15 > terminal_width as usize {
             queue!(stdout, cursor::MoveTo(0, 5), style::Print("(omitted)"))?;
-            let start = indices.len() - (terminal_width as usize - 10) / 23;
-            (start, 23 * start - 10)
+            let col_display_start = indices.len() - (terminal_width as usize - 10) / 23;
+            (col_display_start, 23 * col_display_start - 10)
         } else {
             (1, 15)
         };
 
-        if start == 1 {
+        if col_display_start == 1 {
             for (i, (stack, _)) in outputs.iter().enumerate() {
-                if i < first_index_top || first_index_top + 6 < i {
+                if i < files_top_index || files_top_index + 6 < i {
                     continue;
                 }
-                queue!(stdout, cursor::MoveTo(0, (i - first_index_top + 2) as u16))?;
-                if first_index_top > 0 && i == first_index_top {
+                queue!(stdout, cursor::MoveTo(0, (i - files_top_index + 2) as u16))?;
+                if files_top_index > 0 && i == files_top_index {
                     queue!(stdout, style::Print("    ^  "))?;
                     continue;
                 }
-                if i + 1 < outputs.len() && i == first_index_top + 6 {
+                if i + 1 < outputs.len() && i == files_top_index + 6 {
                     queue!(stdout, style::Print("    v  "))?;
                     continue;
                 }
@@ -132,7 +132,7 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
 
             num_indices[i] = strategy.len();
 
-            if start <= i {
+            if col_display_start <= i {
                 queue!(
                     stdout,
                     cursor::MoveTo((23 * i - offset) as u16, indices[i - 1] as u16 + 2),
@@ -204,8 +204,7 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
 
                 for j in 0..13 {
                     let rank2 = 12 - j;
-
-                    match ((cur_rate[(indices.len() + 1) % 2][rank2][rank1] + 0.1) * 5.0) as usize {
+                    match (cur_rate[(indices.len() + 1) % 2][rank2][rank1] * 3.0 + 0.5) as usize {
                         0 => queue!(
                             stdout,
                             style::SetForegroundColor(style::Color::Reset),
@@ -213,28 +212,18 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
                         )?,
                         1 => queue!(
                             stdout,
-                            style::SetForegroundColor(style::Color::Red),
-                            style::Print(" *    ")
+                            style::SetForegroundColor(style::Color::Yellow),
+                            style::Print("   *  ")
                         )?,
                         2 => queue!(
                             stdout,
-                            style::SetForegroundColor(style::Color::Magenta),
-                            style::Print(" **   ")
+                            style::SetForegroundColor(style::Color::Cyan),
+                            style::Print("  * * ")
                         )?,
                         3 => queue!(
                             stdout,
-                            style::SetForegroundColor(style::Color::Yellow),
-                            style::Print(" ***  ")
-                        )?,
-                        4 => queue!(
-                            stdout,
-                            style::SetForegroundColor(style::Color::Cyan),
-                            style::Print(" **** ")
-                        )?,
-                        5 => queue!(
-                            stdout,
                             style::SetForegroundColor(style::Color::Green),
-                            style::Print(" *****")
+                            style::Print("  *** ")
                         )?,
                         _ => unreachable!(),
                     }
@@ -283,12 +272,12 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
                 if *index == 0 {
                     *index = *num_index - 1;
                     if len == 1 && *num_index > 7 {
-                        first_index_top = *num_index - 7;
+                        files_top_index = *num_index - 7;
                     }
                 } else {
                     *index -= 1;
-                    if len == 1 && *index > 0 && *index == first_index_top {
-                        first_index_top -= 1;
+                    if len == 1 && *index > 0 && *index == files_top_index {
+                        files_top_index -= 1;
                     }
                 }
             }
@@ -301,12 +290,12 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
                 if *index + 1 == *num_index {
                     *index = 0;
                     if len == 1 {
-                        first_index_top = 0;
+                        files_top_index = 0;
                     }
                 } else {
                     *index += 1;
-                    if len == 1 && *index + 1 < *num_index && *index == first_index_top + 6 {
-                        first_index_top += 1;
+                    if len == 1 && *index + 1 < *num_index && *index == files_top_index + 6 {
+                        files_top_index += 1;
                     }
                 }
             }
