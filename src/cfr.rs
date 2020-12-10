@@ -493,7 +493,7 @@ pub fn train_mt<T: serde::Serialize>(
             if let Some((outpath_fn, convert_fn)) = &save_file_opt {
                 if iter >= 1000 {
                     let prevpath = outpath_fn(iter - 999);
-                    std::fs::remove_file(prevpath).unwrap();
+                    let _ = std::fs::remove_file(prevpath);
                 }
                 let outpath = outpath_fn(iter + 1);
                 let converted = avg_sigma
@@ -513,7 +513,7 @@ pub fn train_mt<T: serde::Serialize>(
     if let Some((outpath_fn, _)) = &save_file_opt {
         if num_iter >= 1000 {
             let prevpath = outpath_fn(num_iter - num_iter % 1000);
-            std::fs::remove_file(prevpath).unwrap();
+            let _ = std::fs::remove_file(prevpath);
         }
     }
 
