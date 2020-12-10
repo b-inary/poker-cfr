@@ -9,12 +9,11 @@ use crossterm::{
 use game_node::PublicInfoSet;
 use ordered_float::NotNan;
 use regex::Regex;
-use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 
-type OutputType = (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64);
+type OutputType = (HashMap<PublicInfoSet, Vec<Vec<Vec<f64>>>>, f64, f64);
 
 fn main() {
     let outputs = get_outputs().unwrap();
@@ -129,9 +128,7 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
         for i in 1..indices.len() {
             let key = indices[1..i].iter().map(|x| *x as u8).collect::<Vec<_>>();
             let strategy = &output.0[&key];
-
-            let action_rate = analyze_strategy(strategy);
-            let avg_rate = compute_average_rate(&cur_rate[i % 2], &action_rate);
+            let avg_rate = compute_average_rate(&cur_rate[i % 2], &strategy);
 
             num_indices[i] = strategy.len();
 
@@ -174,7 +171,7 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
 
             for j in 0..13 {
                 for k in 0..13 {
-                    cur_rate[i % 2][j][k] *= action_rate[indices[i]][j][k];
+                    cur_rate[i % 2][j][k] *= strategy[indices[i]][j][k];
                 }
             }
         }
@@ -354,60 +351,15 @@ fn interactive_display(outputs: &Vec<(NotNan<f64>, OutputType)>) -> crossterm::R
     Ok(())
 }
 
-fn analyze_strategy(strategy: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
+fn compute_average_rate(cur_rate: &Vec<Vec<f64>>, strategy: &Vec<Vec<Vec<f64>>>) -> Vec<f64> {
     let num_actions = strategy.len();
-    let mut action_rate = vec![vec![vec![0.0; 13]; 13]; num_actions];
-
-    for action in 0..num_actions {
-        let mut k = 0;
-        for i in 0..51 {
-            for j in (i + 1)..52 {
-                let rank1 = i / 4;
-                let rank2 = j / 4;
-                let suit1 = i % 4;
-                let suit2 = j % 4;
-                let minrank = min(rank1, rank2);
-                let maxrank = max(rank1, rank2);
-                if suit1 == suit2 {
-                    action_rate[action][minrank][maxrank] += strategy[action][k];
-                } else {
-                    action_rate[action][maxrank][minrank] += strategy[action][k];
-                }
-                k += 1;
-            }
-        }
-        for i in 0..13 {
-            for j in 0..13 {
-                let count = if i == j {
-                    6.0
-                } else if i < j {
-                    4.0
-                } else {
-                    12.0
-                };
-                action_rate[action][i][j] /= count;
-            }
-        }
-    }
-
-    action_rate
-}
-
-fn compute_average_rate(cur_rate: &Vec<Vec<f64>>, action_rate: &Vec<Vec<Vec<f64>>>) -> Vec<f64> {
-    let num_actions = action_rate.len();
     let mut ret = Vec::new();
     for action in 0..num_actions {
         let mut tmp = 0.0;
         for i in 0..13 {
             for j in 0..13 {
-                let count = if i == j {
-                    6.0
-                } else if i < j {
-                    4.0
-                } else {
-                    12.0
-                };
-                tmp += cur_rate[i][j] * action_rate[action][i][j] * count;
+                let count = [12.0, 4.0, 6.0][(i <= j) as usize + (i == j) as usize];
+                tmp += cur_rate[i][j] * strategy[action][i][j] * count;
             }
         }
         ret.push(tmp / (52. * 51. / 2.));

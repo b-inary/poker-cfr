@@ -465,11 +465,11 @@ pub fn train(
 
 /// Performs training (multi-threaded version).
 /// Returns: (obtained strategy, player-0's EV, exploitability)
-pub fn train_mt(
+pub fn train_mt<T: serde::Serialize>(
     root: &impl GameNode,
     num_iter: usize,
     show_progress: bool,
-    outpath_opt: Option<impl Fn(usize) -> String>,
+    save_file_opt: Option<(impl Fn(usize) -> String, impl Fn(&Vec<Vec<f64>>) -> T)>,
 ) -> (HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64) {
     let ones = vec![1.0; root.private_info_set_len()];
     let mut cum_cfr = HashMap::new();
@@ -490,14 +490,18 @@ pub fn train_mt(
             let exploitability = compute_exploitability(root, &avg_sigma);
             print!(" (exploitability = {:+.3e}[bb])", exploitability);
             std::io::stdout().flush().unwrap();
-            if let Some(outpath_fn) = &outpath_opt {
+            if let Some((outpath_fn, convert_fn)) = &save_file_opt {
                 if iter >= 1000 {
                     let prevpath = outpath_fn(iter - 999);
                     std::fs::remove_file(prevpath).unwrap();
                 }
                 let outpath = outpath_fn(iter + 1);
+                let converted = avg_sigma
+                    .iter()
+                    .map(|(key, value)| (key.clone(), convert_fn(value)))
+                    .collect::<HashMap<_, _>>();
                 let ev = compute_ev(root, 0, &ones, &ones, &avg_sigma);
-                let encoded = serialize(&(avg_sigma, ev, exploitability)).unwrap();
+                let encoded = serialize(&(converted, ev, exploitability)).unwrap();
                 let mut outfile = File::create(&outpath).unwrap();
                 outfile.write_all(&encoded).unwrap();
             }
@@ -506,7 +510,7 @@ pub fn train_mt(
     if show_progress {
         println!();
     }
-    if let Some(outpath_fn) = &outpath_opt {
+    if let Some((outpath_fn, _)) = &save_file_opt {
         if num_iter >= 1000 {
             let prevpath = outpath_fn(num_iter - num_iter % 1000);
             std::fs::remove_file(prevpath).unwrap();

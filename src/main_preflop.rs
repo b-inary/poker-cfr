@@ -8,6 +8,7 @@ use bincode::{deserialize, serialize};
 use clap::Clap;
 use game_node::PublicInfoSet;
 use game_preflop::PreflopNode;
+use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Result, Write};
@@ -32,31 +33,66 @@ fn main() -> Result<()> {
         opts.stack
     );
 
-    let (strategy, ev, exploitability) = if file_exists {
+    let (_, ev, exploitability) = if file_exists {
         let mut infile = File::open(&path)?;
         let mut buf = Vec::new();
         infile.read_to_end(&mut buf)?;
-        deserialize::<(HashMap<PublicInfoSet, Vec<Vec<f64>>>, f64, f64)>(&buf).unwrap()
+        deserialize::<(HashMap<PublicInfoSet, Vec<Vec<Vec<f64>>>>, f64, f64)>(&buf).unwrap()
     } else {
         let push_fold_node = PreflopNode::new(opts.stack);
-        cfr::train_mt(
+        let (raw_strategy, ev, exploitability) = cfr::train_mt(
             &push_fold_node,
             opts.iteration,
             true,
-            Some(|iter| format!("output/preflop-{}-{}.bin", opts.stack, iter)),
-        )
+            Some((
+                |iter| format!("output/preflop-{}-{}.bin", opts.stack, iter),
+                summarize_strategy,
+            )),
+        );
+        let converted = raw_strategy
+            .iter()
+            .map(|(key, value)| (key.clone(), summarize_strategy(value)))
+            .collect::<HashMap<_, _>>();
+        let encoded = serialize(&(converted, ev, exploitability)).unwrap();
+        let mut outfile = File::create(&path)?;
+        outfile.write_all(&encoded)?;
+        println!("Wrote results to '{}'", &path);
+        (HashMap::new(), ev, exploitability)
     };
 
     println!("- Exploitability: {:+.3e}[bb]", exploitability);
     println!("- EV of SB: {:+.4}[bb]", ev);
     println!("- EV of BB: {:+.4}[bb]", -ev);
 
-    if !file_exists {
-        let encoded = serialize(&(strategy, ev, exploitability)).unwrap();
-        let mut outfile = File::create(&path)?;
-        outfile.write_all(&encoded)?;
-        println!("Wrote results to '{}'", &path);
+    Ok(())
+}
+
+fn summarize_strategy(strategy: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
+    let num_actions = strategy.len();
+    let mut summarized = vec![vec![vec![0.0; 13]; 13]; num_actions];
+
+    for action in 0..num_actions {
+        let mut k = 0;
+        for i in 0..51 {
+            for j in (i + 1)..52 {
+                let minrank = min(i / 4, j / 4);
+                let maxrank = max(i / 4, j / 4);
+                if i % 4 == j % 4 {
+                    summarized[action][minrank][maxrank] += strategy[action][k];
+                } else {
+                    summarized[action][maxrank][minrank] += strategy[action][k];
+                }
+                k += 1;
+            }
+        }
+
+        for i in 0..13 {
+            for j in 0..13 {
+                let count = [12.0, 4.0, 6.0][(i <= j) as usize + (i == j) as usize];
+                summarized[action][i][j] /= count;
+            }
+        }
     }
 
-    Ok(())
+    summarized
 }
