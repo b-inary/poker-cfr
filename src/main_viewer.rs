@@ -30,7 +30,7 @@ fn main() {
 
 fn get_outputs() -> std::io::Result<Vec<(NotNan<f64>, OutputType)>> {
     let output_path = "output/";
-    let re = Regex::new(r"preflop-(\d+.?\d*)-(\d+).bin").unwrap();
+    let re = Regex::new(r"^preflop-(\d+.?\d*)-(\d+).bin$").unwrap();
     let mut outputs = BTreeMap::new();
     let mut iterations = BTreeMap::new();
 
