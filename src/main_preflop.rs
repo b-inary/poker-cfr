@@ -8,7 +8,6 @@ use bincode::{deserialize, serialize};
 use clap::Clap;
 use game_node::PublicInfoSet;
 use game_preflop::PreflopNode;
-use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Result, Write};
@@ -75,12 +74,10 @@ fn summarize_strategy(strategy: &Vec<Vec<f64>>) -> Vec<Vec<Vec<f64>>> {
         let mut k = 0;
         for i in 0..51 {
             for j in (i + 1)..52 {
-                let minrank = min(i / 4, j / 4);
-                let maxrank = max(i / 4, j / 4);
                 if i % 4 == j % 4 {
-                    summarized[action][minrank][maxrank] += strategy[action][k];
+                    summarized[action][i / 4][j / 4] += strategy[action][k];
                 } else {
-                    summarized[action][maxrank][minrank] += strategy[action][k];
+                    summarized[action][j / 4][i / 4] += strategy[action][k];
                 }
                 k += 1;
             }

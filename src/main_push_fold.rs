@@ -5,7 +5,6 @@ mod game_node;
 mod game_push_fold;
 
 use game_push_fold::PushFoldNode;
-use std::cmp::{max, min};
 
 fn main() {
     push_fold(10.0, 10000);
@@ -30,11 +29,11 @@ fn push_fold(eff_stack: f64, num_iter: usize) {
             let suit1 = i % 4;
             let suit2 = j % 4;
             if suit1 == suit2 {
-                push_rate[min(rank1, rank2)][max(rank1, rank2)] += pusher[1][k];
-                call_rate[min(rank1, rank2)][max(rank1, rank2)] += caller[1][k];
+                push_rate[rank1][rank2] += pusher[1][k];
+                call_rate[rank1][rank2] += caller[1][k];
             } else {
-                push_rate[max(rank1, rank2)][min(rank1, rank2)] += pusher[1][k];
-                call_rate[max(rank1, rank2)][min(rank1, rank2)] += caller[1][k];
+                push_rate[rank2][rank1] += pusher[1][k];
+                call_rate[rank2][rank1] += caller[1][k];
             }
             overall_push_rate += pusher[1][k];
             overall_call_rate += caller[1][k];

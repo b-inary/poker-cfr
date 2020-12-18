@@ -322,6 +322,57 @@ fn compute_ev(
     }
 }
 
+/// Computes `player`'s EV and stores result to `ev`.
+pub fn compute_ev_detail(
+    node: &impl GameNode,
+    player: usize,
+    pi: &Vec<f64>,
+    pmi: &Vec<f64>,
+    sigma: &HashMap<PublicInfoSet, Vec<Vec<f64>>>,
+    ev: &Mutex<HashMap<PublicInfoSet, Vec<f64>>>,
+) -> Vec<f64> {
+    let public_info_set = node.public_info_set();
+
+    if node.is_terminal_node() {
+        let mut pi = pi.clone();
+        mul_vector(&mut pi, &node.evaluate(player, pmi));
+        ev.lock()
+            .unwrap()
+            .insert(public_info_set.clone(), pi.clone());
+        return pi;
+    }
+
+    let strategy = &sigma[public_info_set];
+
+    let result = node
+        .actions()
+        .into_par_iter()
+        .map(|action| {
+            if node.current_player() == player {
+                let mut pi = pi.clone();
+                mul_vector(&mut pi, &strategy[action]);
+                compute_ev_detail(&node.play(action), player, &pi, pmi, sigma, ev)
+            } else {
+                let mut pmi = pmi.clone();
+                mul_vector(&mut pmi, &strategy[action]);
+                compute_ev_detail(&node.play(action), player, pi, &pmi, sigma, ev)
+            }
+        })
+        .reduce(
+            || vec![0.0; node.private_info_set_len()],
+            |mut v, w| {
+                add_vector(&mut v, &w);
+                v
+            },
+        );
+
+    ev.lock()
+        .unwrap()
+        .insert(public_info_set.clone(), result.clone());
+
+    result
+}
+
 /// Computes best response.
 fn compute_best_response(
     node: &impl GameNode,
@@ -482,14 +533,17 @@ pub fn train_mt<T: serde::Serialize>(
             print!("\riteration: {} / {}", iter + 1, num_iter);
         }
         std::io::stdout().flush().unwrap();
+
         for player in 0..2 {
             cfr_mt(root, iter, player, &ones, &ones, &cum_cfr, &cum_sgm);
         }
+
         if (iter + 1) % 1000 == 0 {
             let avg_sigma = compute_average_strategy_mt(&cum_sgm);
             let exploitability = compute_exploitability(root, &avg_sigma);
             print!(" (exploitability = {:+.3e}[bb])", exploitability);
             std::io::stdout().flush().unwrap();
+
             if let Some((outpath_fn, convert_fn)) = &save_file_opt {
                 if iter >= 1000 {
                     let prevpath = outpath_fn(iter - 999);
@@ -507,9 +561,11 @@ pub fn train_mt<T: serde::Serialize>(
             }
         }
     }
+
     if show_progress {
         println!();
     }
+
     if let Some((outpath_fn, _)) = &save_file_opt {
         if num_iter >= 1000 {
             let prevpath = outpath_fn(num_iter - num_iter % 1000);
