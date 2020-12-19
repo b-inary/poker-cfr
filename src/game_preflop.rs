@@ -66,7 +66,7 @@ impl GameNode for PreflopNode {
                 6 => self.eff_stack,
                 _ => 1.0,
             };
-            ret.cur_bet.max(self.eff_stack);
+            ret.cur_bet = ret.cur_bet.min(self.eff_stack);
         }
         ret.public_info_set.push(action as u8);
         ret

@@ -389,6 +389,10 @@ fn interactive_display(
                 }
             }
 
+            Event::Key(key_ev) if key_ev == KeyCode::Esc.into() => {
+                multiple_select.clear();
+            }
+
             // Up key
             Event::Key(key_ev) if key_ev == KeyCode::Up.into() => {
                 let len = indices.len();
