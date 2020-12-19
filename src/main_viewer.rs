@@ -12,7 +12,7 @@ use crossterm::{
 use game_node::PublicInfoSet;
 use ordered_float::NotNan;
 use regex::Regex;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 
@@ -86,13 +86,16 @@ fn interactive_display(
     let mut ev0_table: &EvType = &HashMap::new();
     let mut ev1_table: &EvType = &HashMap::new();
     let mut display_mode = 0;
+    let mut multiple_select: HashSet<usize> = HashSet::new();
 
     loop {
         queue!(
             stdout,
             terminal::Clear(terminal::ClearType::All),
             cursor::MoveTo(0, 0),
-            style::Print("'q': Quit / 't': Toggle content / Arrow keys: Move cursor"),
+            style::Print(
+                "'q': Quit / 't': Toggle content / Space: Multi-select / Arrow keys: Move cursor"
+            ),
         )?;
 
         let (col_display_start, offset) = if 23 * indices.len() - 15 > terminal_width as usize {
@@ -145,9 +148,10 @@ fn interactive_display(
             num_indices[i] = strategy.len();
 
             if col_display_start <= i {
+                let arrow_y = indices[i - 1] - [0, files_top_index][(i == 1) as usize];
                 queue!(
                     stdout,
-                    cursor::MoveTo((23 * i - offset) as u16, indices[i - 1] as u16 + 2),
+                    cursor::MoveTo((23 * i - offset) as u16, arrow_y as u16 + 2),
                     style::SetAttribute(style::Attribute::Bold),
                     style::Print("=>"),
                     style::SetAttribute(style::Attribute::Reset),
@@ -169,10 +173,18 @@ fn interactive_display(
                     }
                     queue!(
                         stdout,
-                        cursor::MoveTo((23 * i - offset + 3) as u16, j as u16 + 2),
+                        cursor::MoveTo((23 * i - offset + 2) as u16, j as u16 + 2),
                         style::Print(format!(
-                            "{} [{:>5.2}%] {}",
-                            [' ', '*'][(j == indices[i]) as usize],
+                            "{}{}{}[{:>5.2}%] {}",
+                            [' ', '(']
+                                [(i + 1 == indices.len() && multiple_select.contains(&j)) as usize],
+                            [' ', '*'][(j == indices[i]
+                                || (i + 1 == indices.len()
+                                    && multiple_select.contains(&indices[i])
+                                    && multiple_select.contains(&j)))
+                                as usize],
+                            [' ', ')']
+                                [(i + 1 == indices.len() && multiple_select.contains(&j)) as usize],
                             100.0 * avg_rate[j],
                             action
                         )),
@@ -181,9 +193,21 @@ fn interactive_display(
                 }
             }
 
-            for j in 0..13 {
-                for k in 0..13 {
-                    cur_rate[i % 2][j][k] *= strategy[indices[i]][j][k];
+            if i + 1 == indices.len() && multiple_select.contains(&indices[i]) {
+                for j in 0..13 {
+                    for k in 0..13 {
+                        let mut tmp = 0.0;
+                        for idx in &multiple_select {
+                            tmp += strategy[*idx][j][k];
+                        }
+                        cur_rate[i % 2][j][k] *= tmp;
+                    }
+                }
+            } else {
+                for j in 0..13 {
+                    for k in 0..13 {
+                        cur_rate[i % 2][j][k] *= strategy[indices[i]][j][k];
+                    }
                 }
             }
         }
@@ -191,9 +215,23 @@ fn interactive_display(
         if indices.len() >= 2 {
             let player = (indices.len() - 1) % 2;
             let opponent = 1 - player;
-            let key = indices[1..].iter().map(|x| *x as u8).collect::<Vec<_>>();
-            let mut ev = [ev1_table, ev0_table][player][&key].clone();
             let denom = calc_denom(&cur_rate[opponent]);
+
+            let mut ev = vec![vec![0.0; 13]; 13];
+            let mut key = indices[1..].iter().map(|x| *x as u8).collect::<Vec<_>>();
+            if multiple_select.contains(indices.last().unwrap()) {
+                for idx in &multiple_select {
+                    *key.last_mut().unwrap() = *idx as u8;
+                    let tmp = &[ev1_table, ev0_table][player][&key];
+                    for j in 0..13 {
+                        for k in 0..13 {
+                            ev[j][k] += tmp[j][k];
+                        }
+                    }
+                }
+            } else {
+                ev = [ev1_table, ev0_table][player][&key].clone();
+            }
 
             for j in 0..13 {
                 for k in 0..13 {
@@ -336,6 +374,21 @@ fn interactive_display(
             // quit
             Event::Key(key_ev) if key_ev == KeyCode::Char('q').into() => break,
 
+            // toggle display
+            Event::Key(key_ev) if key_ev == KeyCode::Char('t').into() => {
+                display_mode = (display_mode + 1) % 2;
+            }
+
+            // multiple select
+            Event::Key(key_ev) if key_ev == KeyCode::Char(' ').into() => {
+                if indices.len() >= 2 {
+                    let index = *indices.last().unwrap();
+                    if !multiple_select.insert(index) {
+                        multiple_select.remove(&index);
+                    }
+                }
+            }
+
             // Up key
             Event::Key(key_ev) if key_ev == KeyCode::Up.into() => {
                 let len = indices.len();
@@ -385,6 +438,7 @@ fn interactive_display(
                 if indices.len() == 1 || last_idx >= 2 || (indices.len() == 2 && last_idx == 1) {
                     indices.push(0);
                     num_indices.push(0); // temporal value
+                    multiple_select.clear();
                 }
             }
 
@@ -395,12 +449,8 @@ fn interactive_display(
                 if indices.len() > 1 {
                     indices.pop();
                     num_indices.pop();
+                    multiple_select.clear();
                 }
-            }
-
-            // toggle display
-            Event::Key(key_ev) if key_ev == KeyCode::Char('t').into() => {
-                display_mode = (display_mode + 1) % 2;
             }
 
             // ignore other keys
