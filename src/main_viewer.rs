@@ -6,7 +6,7 @@ mod game_preflop;
 use bincode::deserialize;
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute, queue, style, terminal,
 };
 use game_node::PublicInfoSet;
@@ -372,7 +372,12 @@ fn interactive_display(
         // read pressed key
         match event::read()? {
             // quit
-            Event::Key(key_ev) if key_ev == KeyCode::Char('q').into() => break,
+            Event::Key(key_ev)
+                if key_ev == KeyCode::Char('q').into()
+                    || key_ev == KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL) =>
+            {
+                break
+            }
 
             // toggle display
             Event::Key(key_ev) if key_ev == KeyCode::Char('t').into() => {
@@ -394,7 +399,9 @@ fn interactive_display(
             }
 
             // Up key
-            Event::Key(key_ev) if key_ev == KeyCode::Up.into() => {
+            Event::Key(key_ev)
+                if key_ev == KeyCode::Up.into() || key_ev == KeyCode::Char('w').into() =>
+            {
                 let len = indices.len();
                 let index = indices.last_mut().unwrap();
                 let num_index = num_indices.last().unwrap();
@@ -412,7 +419,9 @@ fn interactive_display(
             }
 
             // Down key
-            Event::Key(key_ev) if key_ev == KeyCode::Down.into() => {
+            Event::Key(key_ev)
+                if key_ev == KeyCode::Down.into() || key_ev == KeyCode::Char('s').into() =>
+            {
                 let len = indices.len();
                 let index = indices.last_mut().unwrap();
                 let num_index = num_indices.last().unwrap();
@@ -431,7 +440,9 @@ fn interactive_display(
 
             // Enter or Right key
             Event::Key(key_ev)
-                if key_ev == KeyCode::Enter.into() || key_ev == KeyCode::Right.into() =>
+                if key_ev == KeyCode::Enter.into()
+                    || key_ev == KeyCode::Right.into()
+                    || key_ev == KeyCode::Char('d').into() =>
             {
                 let last_idx = *indices.last().unwrap();
                 if indices.len() == 1 {
@@ -448,7 +459,9 @@ fn interactive_display(
 
             // Backspace or Left key
             Event::Key(key_ev)
-                if key_ev == KeyCode::Backspace.into() || key_ev == KeyCode::Left.into() =>
+                if key_ev == KeyCode::Backspace.into()
+                    || key_ev == KeyCode::Left.into()
+                    || key_ev == KeyCode::Char('a').into() =>
             {
                 if indices.len() > 1 {
                     indices.pop();
